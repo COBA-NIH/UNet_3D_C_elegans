@@ -7,12 +7,14 @@ import time
 import numpy as np
 from monai.losses import DiceLoss
 from monai.inferers import sliding_window_inference
+import logging
 
 from torch.utils.data import DataLoader, Dataset
 
 import torch
 torch.cuda.empty_cache()
 import torchvision
+import torch.nn as nn
 import skimage
 import pandas as pd
 import sklearn
@@ -92,16 +94,21 @@ def train_step(
         accuracy = sklearn.metrics.accuracy_score(y, th_prediction)
         f1 = sklearn.metrics.f1_score(y, th_prediction, labels=[0, 1])
 
-        print(
-            f"""
-            Training step: {i} of {len(data_loader)}
-            Loss: {loss}
-            Accuracy: {accuracy}
-            Precision: {precision}
-            Recall: {recall}
-            F1: {f1}
-            """
-        )
+        logger.log(
+            level=logging.INFO, 
+            msg=f"Train step: [{i} of {len(data_loader)}] Loss: {loss.item()}, Acc: {accuracy}, Prec: {precision}, Recall: {recall}, F1: {f1}"
+            )
+
+        # print(
+        #     f"""
+        #     Training step: {i} of {len(data_loader)}
+        #     Loss: {loss}
+        #     Accuracy: {accuracy}
+        #     Precision: {precision}
+        #     Recall: {recall}
+        #     F1: {f1}
+        #     """
+        # )
 
 def validation_step(
     model,
@@ -129,16 +136,21 @@ def validation_step(
             f1 = sklearn.metrics.f1_score(y, th_prediction, labels=[0, 1])
 
 
-            print(
-                f"""
-                Validation step: {i} of {len(data_loader)}
-                Loss: {loss}
-                Accuracy: {accuracy}
-                Precision: {precision}
-                Recall: {recall}
-                F1: {f1}
-                """
-            )
+            logger.log(
+                level=logging.INFO, 
+                msg=f"Valid step: [{i} of {len(data_loader)}] Loss: {loss.item()}, Acc: {accuracy}, Prec: {precision}, Recall: {recall}, F1: {f1}"
+                )
+
+            # print(
+            #     f"""
+            #     Validation step: {i} of {len(data_loader)}
+            #     Loss: {loss}
+            #     Accuracy: {accuracy}
+            #     Precision: {precision}
+            #     Recall: {recall}
+            #     F1: {f1}
+            #     """
+            # )
 
 max_epochs = 2
 
@@ -148,6 +160,16 @@ model = UNet_3D(
     out_channels=2
     ).to(device)
 
+logger = logging.getLogger('training')
+logger = logging.getLogger("training")
+log_outfile = logging.FileHandler("experiment.log")
+log_outfile.setLevel(logging.DEBUG)
+logger.addHandler(log_outfile)
+
+if torch.cuda.device_count() > 1:
+    print("Running on multiple GPUs")
+    model = nn.DataParallel(model)
+
 loss_function = DiceLoss(smooth_nr=0, smooth_dr=1e-5, squared_pred=True, to_onehot_y=False, sigmoid=False)
 optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
 
@@ -155,3 +177,6 @@ for epoch in range(max_epochs):
     print("epoch:", epoch)
     train_step(model, device, train_loader, loss_function, optimizer)
     validation_step(model, device, val_loader, loss_function)
+
+
+
