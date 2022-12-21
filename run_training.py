@@ -36,7 +36,7 @@ from unet.augmentations.augmentations import (
     Normalize
 )
 from unet.utils.load_data import MaddoxDataset
-from unet.networks.threedee_unet import UNet_3D
+from unet.networks.unet3d import UNet_3D
 
 load_csv = pd.read_csv("patch_data/load_data_training.csv")
 
