@@ -133,6 +133,7 @@ class MaddoxDataset(Dataset):
             "val": 
                 Compose(
                     [
+                        LabelsToEdgesAndCentroids(centroid_pad=2),
                         Normalize(),
                         ToTensor()
                     ]
@@ -151,7 +152,7 @@ class MaddoxDataset(Dataset):
             return data
         elif self.train_val == "val":
             sample = {'image': image, 'mask': mask}
-            data = self.transforms["train"](**sample)
+            data = self.transforms["val"](**sample)
             return data
         else:
             raise NotImplementedError
