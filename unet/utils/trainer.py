@@ -4,6 +4,7 @@ import sklearn
 import torch
 import torch.nn as nn
 import shutil
+import numpy as np
 
 class RunTraining:
     """This class runs training and validation"""
@@ -15,7 +16,7 @@ class RunTraining:
         loss_fn, 
         optimizer, 
         scheduler,
-        num_epochs=100
+        num_epochs=100,
         ):
         self.model = model
         self.device = device
@@ -32,7 +33,7 @@ class RunTraining:
 
         self.writer = SummaryWriter("training_logs")
 
-    def calculate_performance(self, prediction, target, writer, train_or_val):
+    def calculate_performance(self, prediction, target, iterable, train_or_val):
             # Sigmoid scales values between 0-1
             prediction = prediction.sigmoid().detach().cpu().numpy().flatten()
             target = target.long().detach().cpu().numpy().flatten()
@@ -40,43 +41,46 @@ class RunTraining:
             # Convert probabilities into binary predictions
             th_prediction = (prediction > 0.5)
 
+            # Dict to hold stats
+            stats = {}
+
             # Calculate metrics
-            roc = sklearn.metrics.roc_auc_score(target, prediction)
-            precision = sklearn.metrics.precision_score(target, th_prediction)
-            recall = sklearn.metrics.recall_score(target, th_prediction)
-            accuracy = sklearn.metrics.accuracy_score(target, th_prediction)
-            f1 = sklearn.metrics.f1_score(target, th_prediction)
+            # roc = sklearn.metrics.roc_auc_score(target, prediction)
+            stats["precision"] = sklearn.metrics.precision_score(target, th_prediction)
+            stats["recall"] = sklearn.metrics.recall_score(target, th_prediction)
+            stats["accuracy"] = sklearn.metrics.accuracy_score(target, th_prediction)
+            stats["f1"] = sklearn.metrics.f1_score(target, th_prediction)
 
-            writer.add_scalar(f"{train_or_val}/Accuracy", accuracy, self.epoch+1)
-            writer.add_scalar(f"{train_or_val}/Precision", precision, self.epoch+1)
-            writer.add_scalar(f"{train_or_val}/Recall", recall, self.epoch+1)
-            writer.add_scalar(f"{train_or_val}/F1", f1, self.epoch+1)
+            self.writer.add_scalar(f"{train_or_val}/Accuracy", stats["accuracy"], iterable+1)
+            self.writer.add_scalar(f"{train_or_val}/Precision", stats["precision"], iterable+1)
+            self.writer.add_scalar(f"{train_or_val}/Recall", stats["recall"], iterable+1)
+            self.writer.add_scalar(f"{train_or_val}/F1", stats["f1"], iterable+1)
 
-            out = f"---- Accuracy: {accuracy} -- Recall: {recall} -- F1: {f1} ----"
-
-            return out
+            return stats
 
     def fit(self):
-        best_val_loss = 0
-        for self.epoch in tqdm(range(self.num_epochs)):
+        best_val_loss = np.inf
+        for epoch in tqdm(range(self.num_epochs)):
+            self.epoch = epoch
 
             # Train
-            self.train()
+            _, _ = self.train()
 
             # Validate
-            current_val_loss = self.validate()
+            current_val_loss, _ = self.validate()
 
-            is_best = current_val_loss > best_val_loss
-            best_val_loss = max(current_val_loss, best_val_loss)
+            is_best = current_val_loss < best_val_loss
+            print(is_best, best_val_loss, current_val_loss)
+            best_val_loss = min(current_val_loss, best_val_loss)
 
             self.scheduler.step(current_val_loss)
 
             # Save checkpoint
             self.save_checkpoint({
-                'epoch': self.epoch + 1,
-                'state_dict': self.model.state_dict() if not isinstance(self.model, nn.DataParallel) else self.model.module.state_dict(),
-                'optimizer' : self.optimizer.state_dict(),
-                'scheduler' : self.scheduler.state_dict(),
+                "epoch": self.epoch + 1,
+                "state_dict": self.model.state_dict() if not isinstance(self.model, nn.DataParallel) else self.model.module.state_dict(),
+                "optimizer" : self.optimizer.state_dict(),
+                "scheduler" : self.scheduler.state_dict(),
             }, is_best)
 
     def stop_check(self, val_loss, patience=20, delta=0.1):
@@ -87,7 +91,10 @@ class RunTraining:
                 return True
 
 
-    def save_checkpoint(self, state, is_best, filename="last_checkpoint.pytorch"):  
+    def save_checkpoint(self, 
+    state, 
+    is_best, 
+    filename="last_checkpoint.pytorch"):
         torch.save(state, filename)
         if is_best:
             # If the model is best so far, rename it
@@ -126,16 +133,18 @@ class RunTraining:
             # Used for calculating average metrics later
             train_n += X.size(0)
 
-        performance = self.calculate_performance(
+        stats = self.calculate_performance(
             prediction,
             y,
-            self.writer,
+            self.epoch,
             "train"
         )
         
         epoch_loss = train_loss / train_n
 
         self.writer.add_scalar(f"Train-Epoch/Loss", epoch_loss, self.epoch+1)
+
+        return epoch_loss, stats
     
     def validate(self):
         val_loss = 0.0
@@ -153,13 +162,13 @@ class RunTraining:
 
         val_loss = val_loss / val_n
 
-        self.calculate_performance(
+        stats = self.calculate_performance(
                     prediction,
                     y,
-                    self.writer,
+                    self.epoch,
                     "val"
                     )
 
         self.writer.add_scalar(f"Val-Epoch/Loss", val_loss, self.epoch+1)
 
-        return val_loss
+        return val_loss, stats

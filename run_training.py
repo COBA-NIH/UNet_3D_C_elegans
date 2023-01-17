@@ -1,5 +1,4 @@
 import sys
-
 sys.path.append("../")
 import os
 import shutil
@@ -60,7 +59,6 @@ def main_worker(args):
             num_classes=2,
             train_val="train",
         )
-
         val_ds = RandomData(
             data_shape=(1, 24, 24, 24), dataset_size=5, num_classes=2, train_val="val"
         )
@@ -77,6 +75,8 @@ def main_worker(args):
         val_ds = MaddoxDataset(data_csv=val_dataset, train_val="val")
 
     if torch.cuda.is_available():
+        # Find fastest conv
+        torch.backends.cudnn.benchmark = True
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
@@ -104,7 +104,7 @@ def main_worker(args):
 
     model = UNet3D(
         input_channels=1, num_classes=2, network_depth=4, activation=None
-    ).to(device)
+    )
 
     # Different CUDA, different pytorch handling
     try:
@@ -115,6 +115,8 @@ def main_worker(args):
         if torch.cuda.device_count() > 1:
             print("Running on multiple GPUs")
             model = torch.nn.DataParallel(model)
+
+    model.to(device)
 
     ## Requries more setup: https://pytorch.org/docs/master/notes/ddp.html#example
     # Avoid the slowing of for loops due to the interpreters GIL.
