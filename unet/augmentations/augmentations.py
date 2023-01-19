@@ -169,8 +169,7 @@ class LabelsToEdgesAndCentroids(DualTransform):
             mask, self.mode, self.connectivity, self.blur, self.centroid_pad
         )
 
-
-def labels_to_edges_and_centroids(labels, mode, connectivity, blur, centroid_pad):
+def labels_to_edges_and_centroids(labels, connectivity, blur, centroid_pad):
     """For a given instance labelmap, convert the labels to edges and centroids.
     Blur the edges if you'd like.
 
@@ -193,12 +192,18 @@ def labels_to_edges_and_centroids(labels, mode, connectivity, blur, centroid_pad
                 y - centroid_pad : y + centroid_pad,
                 z - centroid_pad : z + centroid_pad,
             ] = 1
+            print(centers.max())
         output = [cell_edges, centers]
     else:
         # GT is blank
         output = [labels, labels]
-    return np.stack(output, axis=0)
 
+    foreground = np.stack(output, axis=0)
+    # Add background as a class
+    background = np.zeros_like(labels)
+    background[np.sum(foreground, axis=0) == 0] = 1
+    output.insert(0, background)
+    return np.stack(output, axis=0)
 
 class ToTensor(DualTransform):
     """Convert input into a tensor. If input has ndim=3 (D, H, W), will expand dims
