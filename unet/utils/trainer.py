@@ -108,19 +108,22 @@ class RunTraining:
         # Set the model to training mode
         self.model.train()
 
-        for i, (X, y) in enumerate(self.data_loader["train"]):
+        for i, (X, y, weight_map) in enumerate(self.data_loader["train"]):
             # Put the image and the mask on the device
-            X, y = X.to(self.device), y.to(self.device)
+            X, y, weight_map = X.to(self.device), y.to(self.device), weight_map.to(self.device)
+            
+            # Clear gradients from the optimizer
+            self.optimizer.zero_grad()
 
             # Run a prediction
             prediction = self.model(X)
-            # Find the loss of the prediction when compared to the GT
-            loss = self.loss_fn(prediction, y)
 
-            # Clear gradients from the optimizer
-            self.optimizer.zero_grad()
+            # Find the loss of the prediction when compared to the GT
+            loss = self.loss_fn(prediction, y, weight_map)
+
             # Using this loss, calculate the gradients of loss for all parameters
             loss.backward()
+            
             # Update the the parameters of the model
             self.optimizer.step()
 
@@ -151,11 +154,11 @@ class RunTraining:
         val_n = 0
         self.model.eval()
         with torch.no_grad():
-            for i, (X, y) in enumerate(self.data_loader["val"]):
-                X, y = X.to(self.device), y.to(self.device)
+            for i, (X, y, weight_map) in enumerate(self.data_loader["val"]):
+                X, y, weight_map = X.to(self.device), y.to(self.device), weight_map.to(self.device)
 
                 prediction = self.model(X)
-                loss = self.loss_fn(prediction, y)
+                loss = self.loss_fn(prediction, y, weight_map)
 
                 val_loss += loss.item() * X.size(0)
                 val_n += X.size(0)
