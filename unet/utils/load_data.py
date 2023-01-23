@@ -1,5 +1,6 @@
 from torch.utils.data import Dataset
 import skimage
+import scipy
 import numpy as np
 import torch
 import sys
@@ -18,7 +19,9 @@ from unet.augmentations.augmentations import (
     RandomPoissonNoise,
     ElasticDeform,
     RandomScale,
-    Normalize
+    Normalize,
+    EdgesAndCentroids,
+    convert_to_tensor
 )
 
 class RandomData(Dataset):
@@ -111,32 +114,39 @@ class RandomData(Dataset):
 
 
 class MaddoxDataset(Dataset):
-    def __init__(self, data_csv, train_val="train"):
+    def __init__(self, data_csv, train_val="train", wmap=False):
         self.data = data_csv
         self.train_val = train_val
+        self.wmap = wmap
+        self.targets = [["image"], ["mask"], ["weight_map"]] if self.wmap else [["image"], ["mask"]]
         self.transforms = {
             "train": 
                 Compose(
                     [
+                        # EdgesAndCentroids(),
                         RandomContrastBrightness(p=0.5),
                         Flip(p=0.5),
                         RandomRot90(p=0.5),
                         RandomGuassianBlur(p=0.5),
                         RandomGaussianNoise(p=0.5),
-                        RandomPoissonNoise(p=0.5),
+                        RandomPoissonNoise(p=1),
                         ElasticDeform(sigma=5, points=1, p=0.5),
-                        LabelsToEdgesAndCentroids(centroid_pad=2),
+                        # LabelsToEdgesAndCentroids(centroid_pad=2),
+                        EdgesAndCentroids(),
                         Normalize(),
                         ToTensor()
-                    ]
+                    ],
+                    targets=self.targets
                 ),
             "val": 
                 Compose(
                     [
-                        LabelsToEdgesAndCentroids(centroid_pad=2),
+                        # LabelsToEdgesAndCentroids(centroid_pad=2),
+                        EdgesAndCentroids(),
                         Normalize(),
                         ToTensor()
-                    ]
+                    ],
+                    targets=self.targets
                 )
         }
 
@@ -146,12 +156,16 @@ class MaddoxDataset(Dataset):
     def __getitem__(self, idx):
         image = skimage.io.imread(self.data.iloc[idx, 0]).astype(np.float32)
         mask = skimage.io.imread(self.data.iloc[idx, 1]).astype(np.float32)
+        if self.wmap:
+            wmap = skimage.io.imread(self.data.iloc[idx, 2]).astype(np.float32)
+            sample = {"image": image, "mask": mask, "weight_map": wmap}
+        else:
+            sample = {"image": image, "mask": mask}
+
         if self.train_val == "train":
-            sample = {'image': image, 'mask': mask}
             data = self.transforms["train"](**sample)
             return data
         elif self.train_val == "val":
-            sample = {'image': image, 'mask': mask}
             data = self.transforms["val"](**sample)
             return data
         else:
@@ -162,15 +176,48 @@ class MaddoxDataset(Dataset):
         (batch, classes, D, H, W)"""
         images = []
         masks = []
+        wmaps = []
+        
         for batch in data:
             image = batch["image"]
             mask = batch["mask"]
+
             images.append(image)
             masks.append(mask)
 
+            if self.wmap:
+                wmap = batch["weight_map"]
+                wmaps.append(wmap)
+
+
         images = torch.stack(images, axis=0)
         masks = torch.stack(masks, axis=0)
-        return images, masks
+        if self.wmap:
+            wmaps = torch.stack(wmaps, axis=0)
+            return images, masks, wmaps
+        else:
+            return images, masks
 
-        
+
+def make_consecutive(array):
+    """Make a non-contiguous label matrix contiguous"""
+    unique = np.unique(array)
+    for new_val, unq in enumerate(unique):
+        array[array == unq] = new_val
+    return array
+
+def one_hot(mask):
+    # y = np.array(mask, dtype="int")
+    # input_shape = y.shape
+    mask = make_consecutive(mask)
+    mask = np.array(mask, dtype=int)
+    num_classes = np.max(mask) + 1
+    return np.moveaxis(np.eye(num_classes)[mask], -1, 0)
+
+def sequential_erode(array, iterations=1):
+    array = one_hot(array)
+    for label in np.unique(array):
+        array[array == label] = skimage.morphology.binary_erosion(array[array == label])
+    # undo one-hot
+    return np.argmax(array, axis=0)
 

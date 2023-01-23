@@ -26,7 +26,7 @@ import sklearn.model_selection
 
 from unet.utils.load_data import MaddoxDataset, RandomData
 from unet.networks.unet3d import UNet3D
-from unet.utils.loss import BCEDiceLoss
+from unet.utils.loss import WeightedBCELoss
 from unet.utils.trainer import RunTraining
 
 import argparse
@@ -49,18 +49,19 @@ def main():
 
 
 def main_worker(args):
-    print(args.batch, type(args.batch))
-
     if args.dummy:
         print("----- Using dummy data ------")
         train_ds = RandomData(
             data_shape=(1, 24, 24, 24),
             dataset_size=20,
-            num_classes=2,
-            train_val="train",
+            num_classes=3,
+            train_val="train"
         )
         val_ds = RandomData(
-            data_shape=(1, 24, 24, 24), dataset_size=5, num_classes=2, train_val="val"
+            data_shape=(1, 24, 24, 24), 
+            dataset_size=5, 
+            num_classes=3, 
+            train_val="val"
         )
     else:
         load_csv = pd.read_csv(args.data)
@@ -70,9 +71,9 @@ def main_worker(args):
         print(
             f"loading data from: {args.data}. Train data of length {train_dataset.shape[0]} and val data of length {val_dataset.shape[0]}"
         )
-        train_ds = MaddoxDataset(data_csv=train_dataset, train_val="train")
+        train_ds = MaddoxDataset(data_csv=train_dataset, train_val="train", wmap=True)
 
-        val_ds = MaddoxDataset(data_csv=val_dataset, train_val="val")
+        val_ds = MaddoxDataset(data_csv=val_dataset, train_val="val", wmap=True)
 
     if torch.cuda.is_available():
         # Find fastest conv
@@ -103,7 +104,7 @@ def main_worker(args):
     data_loader = {"train": train_loader, "val": val_loader}
 
     model = UNet3D(
-        input_channels=1, num_classes=2, network_depth=4, activation=None
+        input_channels=1, num_classes=3, network_depth=4, activation=None
     )
 
     # Different CUDA, different pytorch handling
@@ -124,7 +125,8 @@ def main_worker(args):
     # as in `DataParallel` case
     # model = torch.nn.parallel.DistributedDataParallel(model)
 
-    loss_function = BCEDiceLoss()
+    loss_function = WeightedBCELoss(per_channel=True)
+
     optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.2, patience=20
