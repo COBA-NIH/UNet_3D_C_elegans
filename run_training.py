@@ -1,35 +1,40 @@
-import sys
-sys.path.append("../")
-import os
-import shutil
-import tempfile
-import time
+# import sys
+# sys.path.append("../")
+# import os
+# import shutil
+# import tempfile
+# import time
 import numpy as np
 
 # from monai.losses import DiceLoss
 # from monai.inferers import sliding_window_inference
-import logging
-from tqdm import tqdm
+# import logging
+# from tqdm import tqdm
 
 from torch.utils.data import DataLoader, Dataset
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 
 # http://localhost:6006
 
 import torch
-import torchvision
-import torch.nn as nn
-import skimage
+# import torchvision
+# import torch.nn as nn
+# import skimage
 import pandas as pd
-import sklearn
+# import sklearn
 import sklearn.model_selection
 
 from unet.utils.load_data import MaddoxDataset, RandomData
 from unet.networks.unet3d import UNet3D
-from unet.utils.loss import WeightedBCELoss
+
+# from unet.networks.unet3d import UnetModel
+
+from unet.utils.loss import WeightedBCELoss, WeightedBCEDiceLoss
 from unet.utils.trainer import RunTraining
 
 import argparse
+
+import unet.augmentations.augmentations as aug
 
 
 parser = argparse.ArgumentParser(description="3DUnet Training")
@@ -40,6 +45,35 @@ parser.add_argument("--batch", nargs="?", default=4, type=int)
 parser.add_argument("--epochs", nargs="?", default=10, type=int)
 parser.add_argument("--workers", nargs="?", default=4, type=int)
 parser.add_argument("--dummy", action="store_true")  # Use dummy data
+
+transforms = {
+            "train": 
+                aug.Compose(
+                    [
+                        aug.RandomContrastBrightness(p=0.5),
+                        aug.Flip(p=0.5),
+                        aug.RandomRot90(p=0.5),
+                        aug.RandomGuassianBlur(p=0.5),
+                        aug.RandomGaussianNoise(p=0.5),
+                        aug.RandomPoissonNoise(p=1),
+                        aug.ElasticDeform(p=1),
+                        aug.EdgesAndCentroids(),
+                        # aug.BlurMasks(sigma=1),
+                        aug.Normalize(),
+                        aug.ToTensor()
+                    ],
+                    targets=[["image"], ["mask"], ["weight_map"]]
+                ),
+            "val": 
+                aug.Compose(
+                    [
+                        aug.EdgesAndCentroids(),
+                        aug.Normalize(),
+                        aug.ToTensor()
+                    ],
+                    targets=[["image"], ["mask"], ["weight_map"]]
+                )
+        }
 
 
 def main():
@@ -71,9 +105,9 @@ def main_worker(args):
         print(
             f"loading data from: {args.data}. Train data of length {train_dataset.shape[0]} and val data of length {val_dataset.shape[0]}"
         )
-        train_ds = MaddoxDataset(data_csv=train_dataset, train_val="train", wmap=True)
+        train_ds = MaddoxDataset(data_csv=train_dataset, transforms=transforms, train_val="train", wmap=True)
 
-        val_ds = MaddoxDataset(data_csv=val_dataset, train_val="val", wmap=True)
+        val_ds = MaddoxDataset(data_csv=val_dataset, transforms=transforms, train_val="val", wmap=True)
 
     if torch.cuda.is_available():
         # Find fastest conv
@@ -103,8 +137,12 @@ def main_worker(args):
 
     data_loader = {"train": train_loader, "val": val_loader}
 
+    # model = UNet3D(
+    #     input_channels=1, num_classes=3, network_depth=4, activation=None
+    # )
+
     model = UNet3D(
-        input_channels=1, num_classes=3, network_depth=4, activation=None
+        in_channels=1, out_channels=3, final_sigmoid=True, testing=True
     )
 
     # Different CUDA, different pytorch handling
@@ -125,7 +163,8 @@ def main_worker(args):
     # as in `DataParallel` case
     # model = torch.nn.parallel.DistributedDataParallel(model)
 
-    loss_function = WeightedBCELoss(per_channel=True)
+    # loss_function = WeightedBCELoss(per_channel=True)
+    loss_function = WeightedBCEDiceLoss(per_channel=True)
 
     optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
