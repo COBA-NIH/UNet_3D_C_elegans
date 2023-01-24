@@ -6,23 +6,24 @@ import torch
 import sys
 import pandas as pd
 sys.path.append("../")
-from unet.augmentations.augmentations import (
-    Compose,
-    ToTensor,
-    LabelsToEdgesAndCentroids,
-    RandomContrastBrightness,
-    RandomGuassianBlur,
-    RandomGaussianNoise,
-    RandomRotate2D,
-    Flip,
-    RandomRot90,
-    RandomPoissonNoise,
-    ElasticDeform,
-    RandomScale,
-    Normalize,
-    EdgesAndCentroids,
-    convert_to_tensor
-)
+# from unet.augmentations.augmentations import (
+#     Compose,
+#     ToTensor,
+#     LabelsToEdgesAndCentroids,
+#     RandomContrastBrightness,
+#     RandomGuassianBlur,
+#     RandomGaussianNoise,
+#     RandomRotate2D,
+#     Flip,
+#     RandomRot90,
+#     RandomPoissonNoise,
+#     ElasticDeform,
+#     RandomScale,
+#     Normalize,
+#     EdgesAndCentroids,
+#     convert_to_tensor,
+#     BlurMasks
+# )
 
 class RandomData(Dataset):
     """
@@ -114,41 +115,12 @@ class RandomData(Dataset):
 
 
 class MaddoxDataset(Dataset):
-    def __init__(self, data_csv, train_val="train", wmap=False):
+    def __init__(self, data_csv, transforms, train_val="train", wmap=False):
         self.data = data_csv
         self.train_val = train_val
         self.wmap = wmap
-        self.targets = [["image"], ["mask"], ["weight_map"]] if self.wmap else [["image"], ["mask"]]
-        self.transforms = {
-            "train": 
-                Compose(
-                    [
-                        # EdgesAndCentroids(),
-                        RandomContrastBrightness(p=0.5),
-                        Flip(p=0.5),
-                        RandomRot90(p=0.5),
-                        RandomGuassianBlur(p=0.5),
-                        RandomGaussianNoise(p=0.5),
-                        RandomPoissonNoise(p=1),
-                        ElasticDeform(sigma=5, points=1, p=0.5),
-                        # LabelsToEdgesAndCentroids(centroid_pad=2),
-                        EdgesAndCentroids(),
-                        Normalize(),
-                        ToTensor()
-                    ],
-                    targets=self.targets
-                ),
-            "val": 
-                Compose(
-                    [
-                        # LabelsToEdgesAndCentroids(centroid_pad=2),
-                        EdgesAndCentroids(),
-                        Normalize(),
-                        ToTensor()
-                    ],
-                    targets=self.targets
-                )
-        }
+        # self.targets = [["image"], ["mask"], ["weight_map"]] if self.wmap else [["image"], ["mask"]]
+        self.transforms = transforms
 
     def __len__(self):
         return len(self.data)
