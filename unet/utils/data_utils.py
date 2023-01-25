@@ -92,8 +92,6 @@ def auto_class_weights(mask, one_hot=True):
         wc[val] = max_count / count
     return wc
 
-import cv2
-
 def calculate_weight_map(gt_array, centroid_class_index=2, edge_class_index=1, labels=None, wc=None, w0=10, sigma=5, background_class=0):
     """
     gt_array: GT pixel classes (eg. background: 0, centroids: 1, cell_edges: 2) with shape (classes, spatial)
@@ -170,3 +168,36 @@ def calculate_weight_map(gt_array, centroid_class_index=2, edge_class_index=1, l
     
     return wc_x
 
+
+def load_weights(model, weights_path, device, dict_key="state_dict"):
+    weights = torch.load(weights_path, map_location=device)[dict_key]
+    model.load_state_dict(weights)
+    return model
+
+def set_parameter_requires_grad(model, trainable=False, trainable_layer_name=None):
+    """Determine which layers should be trainable"""
+    # Freeze model layers
+    if not trainable:
+        for param in model.parameters():
+            param.requires_grad = False
+        return model
+    else:
+        if trainable_layer_name is not None:
+            for name, param in model.named_parameters():
+                if not any(i.casefold() in name for i in trainable_layer_name):
+                    param.requires_grad = False
+            return model
+        else:
+            for param in model.parameters():
+                param.requires_grad = True
+            return model
+
+def find_parameter_requires_grad(model):
+    """Find which parameters require gradients in order to 
+    pass them to the optimizer"""
+    params_to_update = []
+    for name, param in model.named_parameters():
+        if param.requires_grad == True:
+            params_to_update.append(param)
+            print("Training:", name)
+    return params_to_update
