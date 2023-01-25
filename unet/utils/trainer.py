@@ -34,29 +34,43 @@ class RunTraining:
         self.writer = SummaryWriter("training_logs")
 
     def calculate_performance(self, prediction, target, iterable, train_or_val):
-            # Sigmoid scales values between 0-1
-            prediction = prediction.sigmoid().detach().cpu().numpy().flatten()
-            target = target.long().detach().cpu().numpy().flatten()
+        """Assumes output from model is sigmoidal"""
+        # prediction = prediction.detach().sigmoid().cpu().numpy().flatten()
 
-            # Convert probabilities into binary predictions
-            th_prediction = (prediction > 0.5)
+        # Testing softmax on the class axis 
+        prediction = torch.softmax(prediction, axis=1)
+        prediction = prediction.detach().cpu().numpy().flatten()
+        target = target.long().detach().cpu().numpy().flatten()
 
-            # Dict to hold stats
-            stats = {}
+        # Convert probabilities into binary predictions
+        th_prediction = prediction > 0.5
 
-            # Calculate metrics
-            # roc = sklearn.metrics.roc_auc_score(target, prediction)
-            stats["precision"] = sklearn.metrics.precision_score(target, th_prediction)
-            stats["recall"] = sklearn.metrics.recall_score(target, th_prediction)
-            stats["accuracy"] = sklearn.metrics.accuracy_score(target, th_prediction)
-            stats["f1"] = sklearn.metrics.f1_score(target, th_prediction)
+        # Dict to hold stats
+        stats = {}
 
-            self.writer.add_scalar(f"{train_or_val}/Accuracy", stats["accuracy"], iterable+1)
-            self.writer.add_scalar(f"{train_or_val}/Precision", stats["precision"], iterable+1)
-            self.writer.add_scalar(f"{train_or_val}/Recall", stats["recall"], iterable+1)
-            self.writer.add_scalar(f"{train_or_val}/F1", stats["f1"], iterable+1)
+        # Calculate metrics
+        # roc = sklearn.metrics.roc_auc_score(target, prediction)
+        stats["precision"] = sklearn.metrics.precision_score(target, th_prediction)
+        stats["recall"] = sklearn.metrics.recall_score(target, th_prediction)
+        stats["accuracy"] = sklearn.metrics.accuracy_score(target, th_prediction)
+        stats["f1"] = sklearn.metrics.f1_score(target, th_prediction)
+        stats["jaccard"] = sklearn.metrics.jaccard_score(target, th_prediction)
+        stats["dice_coef"] = self.dice_coef(target, th_prediction)
 
-            return stats
+        self.writer.add_scalar(f"{train_or_val}/Accuracy", stats["accuracy"], iterable+1)
+        self.writer.add_scalar(f"{train_or_val}/Precision", stats["precision"], iterable+1)
+        self.writer.add_scalar(f"{train_or_val}/Recall", stats["recall"], iterable+1)
+        self.writer.add_scalar(f"{train_or_val}/F1", stats["f1"], iterable+1)
+        self.writer.add_scalar(f"{train_or_val}/jaccard", stats["jaccard"], iterable+1)
+        self.writer.add_scalar(f"{train_or_val}/dice_coef", stats["dice_coef"], iterable+1)
+
+        return stats
+
+    def dice_coef(self, y_true, y_pred):
+        intersection = np.sum((y_true+y_pred == 2))
+        union = np.sum(y_true) + np.sum(y_pred)
+        dice = (2 * intersection) / (union + 1e-6)
+        return dice
 
     def fit(self):
         best_val_loss = np.inf
@@ -79,16 +93,16 @@ class RunTraining:
             self.save_checkpoint({
                 "epoch": self.epoch + 1,
                 "state_dict": self.model.state_dict() if not isinstance(self.model, nn.DataParallel) else self.model.module.state_dict(),
-                "optimizer" : self.optimizer.state_dict(),
-                "scheduler" : self.scheduler.state_dict(),
+                # "optimizer" : self.optimizer.state_dict(),
+                # "scheduler" : self.scheduler.state_dict(),
             }, is_best)
 
-    def stop_check(self, val_loss, patience=20, delta=0.1):
-        return NotImplementedError()
-        if self.best_val_score + delta >= val_loss:
-            self.counter += 1
-            if self.counter >= patience:
-                return True
+    # def stop_check(self, val_loss, patience=20, delta=0.1):
+    #     return NotImplementedError()
+    #     if self.best_val_score + delta >= val_loss:
+    #         self.counter += 1
+    #         if self.counter >= patience:
+    #             return True
 
 
     def save_checkpoint(self, 
@@ -108,9 +122,14 @@ class RunTraining:
         # Set the model to training mode
         self.model.train()
 
-        for i, (X, y, weight_map) in enumerate(self.data_loader["train"]):
-            # Put the image and the mask on the device
-            X, y, weight_map = X.to(self.device), y.to(self.device), weight_map.to(self.device)
+        for i, data in enumerate(self.data_loader["train"]):
+            X, y = data["image"].to(self.device), data["mask"].to(self.device)
+            
+            # Check if there is a weight map
+            try:
+                weight_map = data["weight_map"].to(self.device)
+            except:
+                weight_map = None
             
             # Clear gradients from the optimizer
             self.optimizer.zero_grad()
@@ -154,8 +173,16 @@ class RunTraining:
         val_n = 0
         self.model.eval()
         with torch.no_grad():
-            for i, (X, y, weight_map) in enumerate(self.data_loader["val"]):
-                X, y, weight_map = X.to(self.device), y.to(self.device), weight_map.to(self.device)
+            # for i, (X, y, weight_map) in enumerate(self.data_loader["val"]):
+                # X, y, weight_map = X.to(self.device), y.to(self.device), weight_map.to(self.device)
+            for i, data in enumerate(self.data_loader["val"]):
+                X, y = data["image"].to(self.device), data["mask"].to(self.device)
+                
+                # Check if there is a weight map
+                try:
+                    weight_map = data["weight_map"].to(self.device)
+                except:
+                    weight_map = None
 
                 prediction = self.model(X)
                 loss = self.loss_fn(prediction, y, weight_map)

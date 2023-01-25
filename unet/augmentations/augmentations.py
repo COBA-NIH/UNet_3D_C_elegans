@@ -464,13 +464,14 @@ class RandomRot90(DualTransform):
 
 
 class ElasticDeform(DualTransform):
-    def __init__(self, paired=True, sigma=25, points=3, axis=(1, 2), p=1.0):
+    def __init__(self, paired=True, sigma=25, points=3, mode="constant", axis=(1, 2), p=1.0):
         """Paired controls if the apply method should pass both image and mask
         to the same apply method"""
         super().__init__(p=p, paired=True)
         self.sigma = sigma
         self.points = points
         self.axis = axis # Axis on which to apply deformation (skip z)
+        self.mode = mode
 
     def apply(self, image, mask, weight_map=None):
         if weight_map is not None:
@@ -489,8 +490,9 @@ class ElasticDeform(DualTransform):
                 points=self.points, 
                 axis=self.axis,
                 order=[1, 0, 0, 0, 0], # Iterpolate only the raw pixels
+                mode=self.mode,
                 # mode="constant", # Leads to background
-                mode="nearest", # raw pixels significantly warped
+                # mode="nearest", # raw pixels significantly warped
                 # mode="wrap", # similar to nearest
                 # mode="reflect", # Leads to incomplete edges
                 # mode="mirror", # Leads to some strange object shapes
@@ -575,15 +577,16 @@ class EdgesAndCentroids(DualTransform):
 
 class BlurMasks(DualTransform):
     """Apply Gaussian blur to masks only"""
-    def __init__(self, sigma=2, always_apply=True):
+    def __init__(self, sigma=2, channel_axis=0, always_apply=True):
         super().__init__(always_apply)
         self.sigma = sigma
+        self.channel_axis = channel_axis
     
     def apply(self, image):
         return image
 
     def apply_to_mask(self, mask):
-        return skimage.filters.gaussian(mask, sigma=self.sigma)
+        return skimage.filters.gaussian(mask, sigma=self.sigma, channel_axis=self.channel_axis)
 
     def apply_to_wmap(self, wmap):
         # return skimage.filters.gaussian(wmap, sigma=self.sigma)
