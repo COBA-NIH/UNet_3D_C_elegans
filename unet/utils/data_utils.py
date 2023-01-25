@@ -6,13 +6,15 @@ import pathlib
 import torch.nn.functional as F
 import os
 
-def generate_patches(image, patch_shape, stride_shape):
+def generate_patches(image, patch_shape, stride_shape, unfold_dims=[0, 1, 2]):
     """Uses PyTorch unfolde to generate non-overlapping patches
     for a given input in 3D.
     
     Patch shape and stride shape are in order (D, W, H). 
 
     Output tensor with order: (patch, D, W, H).
+
+    unfold_dims: the dimensions on which to unfold ()
     """
     # For now, patch and stride shape are the same.
     # stride_shape = patch_shape
@@ -20,35 +22,43 @@ def generate_patches(image, patch_shape, stride_shape):
     if not torch.is_tensor(image):
         raise TypeError("Input is not a Tensor.")
 
+    d0, d1, d2 = unfold_dims
+
     # Check that the image dimensions divide cleanly into the patch shape
     # If not, pad the image. 
     if any([
-        image.shape[0] % patch_shape[0],
-        image.shape[1] % patch_shape[1],
-        image.shape[2] % patch_shape[2]]):
+        image.shape[d0] % patch_shape[0],
+        image.shape[d1] % patch_shape[1],
+        image.shape[d2] % patch_shape[2]]):
         print("Patches do not divide by the image shape. Padding image.")
         image = F.pad(
             image,
-            (image.size(2)%patch_shape[2] // 2, image.size(2)%patch_shape[2] // 2,
-            image.size(1)%patch_shape[1] // 2, image.size(1)%patch_shape[1] // 2,
-            image.size(0)%patch_shape[0] // 2, image.size(0)%patch_shape[0] // 2)
+            (image.size(d2)%patch_shape[2] // 2, image.size(d2)%patch_shape[2] // 2,
+            image.size(d1)%patch_shape[1] // 2, image.size(d1)%patch_shape[1] // 2,
+            image.size(d0)%patch_shape[0] // 2, image.size(d0)%patch_shape[0] // 2)
             )
     # Add an extra dimension that will hold the patches
-    image = torch.unsqueeze(image, axis=0)
+    # Add dimension to first axis in the dimensions to unfold
+    image = torch.unsqueeze(image, axis=unfold_dims[0])
     # Unfold the 1st dimension with size patch_shape[0] with stride_shape[0]
     # Unfold slides along in the provided dimension providing the desired patches
     patches = image.unfold(
-        1, patch_shape[0], stride_shape[0]
+        d0+1, patch_shape[0], stride_shape[0]
         ).unfold(
-            2, patch_shape[1], stride_shape[1]
+            d1+1, patch_shape[1], stride_shape[1]
             ).unfold(
-                3, patch_shape[2], stride_shape[2]
+                d2+1, patch_shape[2], stride_shape[2]
                 )
-    unfold_shape = patches.size()
-    patches = patches.contiguous().view(-1, patch_shape[0], patch_shape[1], patch_shape[2]) 
+    # Perhaps an unreliable way to infer that there's a channel_dimension that should be respected
+    if unfold_dims != [0, 1, 2]:
+        # There's a channel dimension 
+        patches = patches.contiguous().view(image.size(0), -1, patch_shape[0], patch_shape[1], patch_shape[2]) 
+    else:
+        # No channel dim, so infer 0th shape
+        patches = patches.contiguous().view(-1, patch_shape[0], patch_shape[1], patch_shape[2]) 
     return patches
 
-def save_patches(patches, save_filename, save_dir):
+def save_patches(patches, save_filename, save_dir, patch_dim=0):
     """
     Takes Tensors with shape (patch, D, W, H) and saves them as 
     .tiff files in save_dir"""
@@ -59,11 +69,15 @@ def save_patches(patches, save_filename, save_dir):
 
     all_paths = []
     
-    for i in range(patches.shape[0]):
+    for i in range(patches.shape[patch_dim]):
         save_path = pathlib.Path(save_filename)
         out_filename = save_path.with_name(f"{save_path.stem}_patch{i+1}{save_path.suffix}")
         out_path = os.path.join(save_dir, out_filename)
-        skimage.io.imsave(out_path, patches[i,...], compression=('zlib', 1))
+        if patch_dim == 0:
+            skimage.io.imsave(out_path, patches[i,...], compression=('zlib', 1))
+        else:
+            # There's a channel dim, so patch_dim is 1
+            skimage.io.imsave(out_path, patches[:,i,...], compression=('zlib', 1))
         all_paths.append(out_path)
     return all_paths
 
