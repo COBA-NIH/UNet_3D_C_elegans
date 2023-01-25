@@ -254,6 +254,8 @@ def convert_to_tensor(input_array):
         # Add channel axis
         input_array = np.expand_dims(input_array, axis=0)
     return torch.from_numpy(input_array.astype(np.float32))
+    #     tensor = torch.from_numpy(input_array).double()
+    # return tensor
 
 
 def gaussian_blur(input_array, sigma_range=[0.1, 2.0]):
@@ -322,9 +324,14 @@ class RandomPoissonNoise(DualTransform):
 
 
 def normalize_img(image):
-    mean, std = image.mean(), image.std()
-    norm_image = (image - mean) / std
-    return norm_image
+    # mean, std = image.mean(), image.std()
+    # norm_image = (image - mean) / std
+    # return norm_image
+
+    mean = np.mean(image)
+    std = np.std(image)
+
+    return (image - mean) / np.clip(std, a_min=1e-10, a_max=None)
 
 
 class Normalize(DualTransform):
@@ -457,12 +464,13 @@ class RandomRot90(DualTransform):
 
 
 class ElasticDeform(DualTransform):
-    def __init__(self, paired=True, sigma=5, points=2, p=1.0):
+    def __init__(self, paired=True, sigma=25, points=3, axis=(1, 2), p=1.0):
         """Paired controls if the apply method should pass both image and mask
         to the same apply method"""
         super().__init__(p=p, paired=True)
         self.sigma = sigma
         self.points = points
+        self.axis = axis # Axis on which to apply deformation (skip z)
 
     def apply(self, image, mask, weight_map=None):
         if weight_map is not None:
@@ -476,9 +484,16 @@ class ElasticDeform(DualTransform):
             data.extend(weight_maps)
 
             data = elasticdeform.deform_random_grid(
-            data, sigma=self.sigma, points=self.points, order=[1, 0, 0, 0, 0],
-            mode="nearest"
-            # mode="constant"
+                data, 
+                sigma=self.sigma, 
+                points=self.points, 
+                axis=self.axis,
+                order=[1, 0, 0, 0, 0], # Iterpolate only the raw pixels
+                # mode="constant", # Leads to background
+                mode="nearest", # raw pixels significantly warped
+                # mode="wrap", # similar to nearest
+                # mode="reflect", # Leads to incomplete edges
+                # mode="mirror", # Leads to some strange object shapes
             )
 
             weight_map = np.stack(data[2:], axis=0)
@@ -486,7 +501,12 @@ class ElasticDeform(DualTransform):
             return data[0], data[1], weight_map
         else:
             image, mask = elasticdeform.deform_random_grid(
-            [image, mask], sigma=self.sigma, points=self.points, order=[1, 0]
+                [image, mask], 
+                sigma=self.sigma, 
+                points=self.points, 
+                axis=self.axis,
+                order=[1, 0],
+                mode="mirror",
             )
             
             return image, mask
@@ -536,17 +556,35 @@ def edges_and_centroids(
 
 
 class EdgesAndCentroids(DualTransform):
-    def __init__(self, mode="inner", connectivity=1, always_apply=True):
+    def __init__(self, mode="inner", connectivity=1, iterations=1, always_apply=True):
         super().__init__(always_apply)
         self.mode = mode
         self.connectivity = connectivity
+        self.iterations = iterations
 
     def apply(self, image):
         """The image is not changed"""
         return image
 
     def apply_to_mask(self, mask):
-        return edges_and_centroids(mask, mode=self.mode, connectivity=self.connectivity)
+        return edges_and_centroids(mask, mode=self.mode, connectivity=self.connectivity, iterations=self.iterations)
 
     def apply_to_wmap(self, wmap):
+        return wmap
+
+
+class BlurMasks(DualTransform):
+    """Apply Gaussian blur to masks only"""
+    def __init__(self, sigma=2, always_apply=True):
+        super().__init__(always_apply)
+        self.sigma = sigma
+    
+    def apply(self, image):
+        return image
+
+    def apply_to_mask(self, mask):
+        return skimage.filters.gaussian(mask, sigma=self.sigma)
+
+    def apply_to_wmap(self, wmap):
+        # return skimage.filters.gaussian(wmap, sigma=self.sigma)
         return wmap
