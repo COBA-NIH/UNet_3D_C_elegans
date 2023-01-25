@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import sys
 import pandas as pd
+import unet.augmentations.augmentations as aug
 sys.path.append("../")
 # from unet.augmentations.augmentations import (
 #     Compose,
@@ -96,31 +97,18 @@ class RandomData(Dataset):
             return data
         else:
             raise NotImplementedError
-    
-    def collate_fn(self, data):
-        """Stack images and masks separately into batches
-        (batch, classes, D, H, W)"""
-        images = []
-        masks = []
-        for batch in data:
-            image = batch["image"]
-            mask = batch["mask"]
-            images.append(image)
-            masks.append(mask)
-
-        images = torch.stack(images, axis=0)
-        masks = torch.stack(masks, axis=0)
-        return images, masks
-
-
 
 class MaddoxDataset(Dataset):
-    def __init__(self, data_csv, transforms, train_val="train", wmap=False):
+    def __init__(self, data_csv, transforms, targets, train_val="train", wmap=False):
         self.data = data_csv
         self.train_val = train_val
         self.wmap = wmap
+        self.targets = targets
         # self.targets = [["image"], ["mask"], ["weight_map"]] if self.wmap else [["image"], ["mask"]]
-        self.transforms = transforms
+        self.transforms = aug.Compose(
+                    transforms,
+                    targets=self.targets
+                )
 
     def __len__(self):
         return len(self.data)
@@ -129,46 +117,14 @@ class MaddoxDataset(Dataset):
         image = skimage.io.imread(self.data.iloc[idx, 0]).astype(np.float32)
         mask = skimage.io.imread(self.data.iloc[idx, 1]).astype(np.float32)
         if self.wmap:
+            assert len(self.targets) == 3, f"Found {len(self.targets)} in targets, {self.targets} but wmap is {self.wmap}"
             wmap = skimage.io.imread(self.data.iloc[idx, 2]).astype(np.float32)
             sample = {"image": image, "mask": mask, "weight_map": wmap}
         else:
+            assert len(self.targets) == 2, f"Found {len(self.targets)} in targets, {self.targets} but wmap is {self.wmap}"
             sample = {"image": image, "mask": mask}
-
-        if self.train_val == "train":
-            data = self.transforms["train"](**sample)
-            return data
-        elif self.train_val == "val":
-            data = self.transforms["val"](**sample)
-            return data
-        else:
-            raise NotImplementedError
-
-    def collate_fn(self, data):
-        """Stack images and masks separately into batches
-        (batch, classes, D, H, W)"""
-        images = []
-        masks = []
-        wmaps = []
-        
-        for batch in data:
-            image = batch["image"]
-            mask = batch["mask"]
-
-            images.append(image)
-            masks.append(mask)
-
-            if self.wmap:
-                wmap = batch["weight_map"]
-                wmaps.append(wmap)
-
-
-        images = torch.stack(images, axis=0)
-        masks = torch.stack(masks, axis=0)
-        if self.wmap:
-            wmaps = torch.stack(wmaps, axis=0)
-            return images, masks, wmaps
-        else:
-            return images, masks
+        data = self.transforms(**sample)
+        return data
 
 
 def make_consecutive(array):
