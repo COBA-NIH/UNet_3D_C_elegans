@@ -55,18 +55,42 @@ class BCEDiceLoss(nn.Module):
 
         return output
 
-
-class WeightedBCELoss(nn.Module):
-    def __init__(self, per_image=False, per_channel=False):
+class AbstractWeightedLoss(nn.Module):
+    """Class for abstracting weighted loss methods. Allows for unreduced tensors
+    to be multiplied by weight maps or just indiscriminate class weights"""
+    def __init__(self, class_weights=None):
         super().__init__()
+        self.class_weights = class_weights
+
+    def resolve_weights(self, target, weight_map=None):
+        batch_size, n_channels = target.size(0), target.size(1)
+        if self.class_weights is not None and weight_map is None:
+            assert len(self.class_weights) == n_channels, f"class_weight {self.class_weights} does not match number of target classes {n_channels}"
+            weights = torch.ones((target.size()))
+            for c in range(n_channels):
+                weights[:,c,...] = weights[:,c,...] * self.class_weights[c]
+            return weights
+        elif self.class_weights is None and weight_map is not None:
+            return weight_map
+        elif self.class_weights is None and weight_map is None:
+            return torch.ones((target.size()))
+        elif self.class_weights is not None and weight_map is not None:
+            raise ValueError("Both class_weights and weight_map are requested but you can only have one")
+        else:
+            raise NotImplementedError
+class WeightedBCELoss(AbstractWeightedLoss):
+    def __init__(self, class_weights=None, per_image=False, per_channel=False):
+        super().__init__(class_weights)
+        self.class_weights = class_weights
         self.per_image = per_image
         self.per_channel = per_channel
         self.bce = nn.BCEWithLogitsLoss(reduction="none")
 
-    def forward(self, prediction, target, weights):
+    def forward(self, prediction, target, weights=None):
         batch_size, n_channels = prediction.size(0), prediction.size(1)
 
         # n_parts to split tensor, dependeing on per-channel/image
+        # I don't think this is necessary...
         n_parts = 1
         if self.per_image:
             n_parts = batch_size
@@ -87,12 +111,13 @@ class WeightedBCELoss(nn.Module):
 
         return loss
 
-class WeightedDiceLoss(nn.Module):
+class WeightedDiceLoss(AbstractWeightedLoss):
     """Pixel weighted dice loss"""
-    def __init__(self, per_image=False, per_channel=False):
+    def __init__(self, device, class_weights=None, per_image=False, per_channel=False):
+        super().__init__(device, class_weights)
+        self.class_weights = class_weights
         self.per_image = per_image
         self.per_channel = per_channel
-        super().__init__()
     
     def forward(self, prediction, target, weight_map):
         eps = 1e-6
@@ -107,18 +132,29 @@ class WeightedDiceLoss(nn.Module):
         # prediction = prediction.contiguous().view(n_parts, -1)
         # target = target.contiguous().view(n_parts, -1)
         # weights = weights.contiguous().view(n_parts, -1)
-        prediction = prediction.view(n_parts, -1)
+        prediction = prediction.sigmoid().view(n_parts, -1)
         target = target.view(n_parts, -1)
         weights = weights.view(n_parts, -1)
 
         intersection = torch.sum(dice_output * dice_target * weights, dim=1)
         union = torch.sum(prediction, dim=1) + torch.sum(target, dim=1) + eps
-        loss = (1 - (2 * intersection + eps) / union).mean()
+        loss = (1 - (2 * intersection) / union).mean()
         return loss
 
 
+class WeightedBCEDiceLoss(AbstractWeightedLoss):
+    """Pixel weighted BCE + Dice Loss"""
+    def __init__(self, class_weights=None, per_image=False, per_channel=False):
+        super().__init__(class_weights)
+        self.class_weights = class_weights
+        self.bce = WeightedBCELoss(class_weights=None, per_image=per_image, per_channel=per_channel)
+        self.dice = WeightedBCELoss(class_weights=None, per_image=per_image, per_channel=per_channel)
 
-### ComboLoss - various sources
+    def forward(self, prediction, target, weight_map=None):
+        weights = self.resolve_weights(target, weight_map).to(target.device)
+        loss = self.bce(prediction, target, weights) + self.dice(prediction, target, weights)
+        return loss
+
 
 def soft_dice_loss(outputs, targets, per_image=False, per_channel=False):
     batch_size, n_channels = outputs.size(0), outputs.size(1)
@@ -137,124 +173,3 @@ def soft_dice_loss(outputs, targets, per_image=False, per_channel=False):
     loss = (1 - (2 * intersection + eps) / union).mean()
     return loss
 
-# def dice_metric(preds, trues, per_image=False, per_channel=False):
-#     preds = preds.float()
-#     return 1 - soft_dice_loss(preds, trues, per_image, per_channel)
-
-
-# def jaccard(outputs, targets, per_image=False, non_empty=False, min_pixels=5):
-#     batch_size = outputs.size()[0]
-#     eps = 1e-3
-#     if not per_image:
-#         batch_size = 1
-#     dice_target = targets.contiguous().view(batch_size, -1).float()
-#     dice_output = outputs.contiguous().view(batch_size, -1)
-#     target_sum = torch.sum(dice_target, dim=1)
-#     intersection = torch.sum(dice_output * dice_target, dim=1)
-#     losses = 1 - (intersection + eps) / (torch.sum(dice_output + dice_target, dim=1) - intersection + eps)
-#     if non_empty:
-#         assert per_image == True
-#         non_empty_images = 0
-#         sum_loss = 0
-#         for i in range(batch_size):
-#             if target_sum[i] > min_pixels:
-#                 sum_loss += losses[i]
-#                 non_empty_images += 1
-#         if non_empty_images == 0:
-#             return 0
-#         else:
-#             return sum_loss / non_empty_images
-
-#     return losses.mean()
-
-
-# class DiceLoss(nn.Module):
-#     def __init__(self, weight=None, size_average=True, per_image=False):
-#         super().__init__()
-#         self.size_average = size_average
-#         self.register_buffer('weight', weight)
-#         self.per_image = per_image
-
-#     def forward(self, input, target):
-#         return soft_dice_loss(input, target, per_image=self.per_image)
-
-
-# class JaccardLoss(nn.Module):
-#     def __init__(self, weight=None, size_average=True, per_image=False, non_empty=False, apply_sigmoid=False,
-#                  min_pixels=5):
-#         super().__init__()
-#         self.size_average = size_average
-#         self.register_buffer('weight', weight)
-#         self.per_image = per_image
-#         self.non_empty = non_empty
-#         self.apply_sigmoid = apply_sigmoid
-#         self.min_pixels = min_pixels
-
-#     def forward(self, input, target):
-#         if self.apply_sigmoid:
-#             input = torch.sigmoid(input)
-#         return jaccard(input, target, per_image=self.per_image, non_empty=self.non_empty, min_pixels=self.min_pixels)
-
-# class FocalLoss2d(nn.Module):
-#     def __init__(self, gamma=2, ignore_index=255):
-#         super().__init__()
-#         self.gamma = gamma
-#         self.ignore_index = ignore_index
-
-#     def forward(self, outputs, targets):
-#         outputs = outputs.contiguous()
-#         targets = targets.contiguous()
-#         eps = 1e-8
-#         non_ignored = targets.view(-1) != self.ignore_index
-#         targets = targets.view(-1)[non_ignored].float()
-#         outputs = outputs.contiguous().view(-1)[non_ignored]
-#         outputs = torch.clamp(outputs, eps, 1. - eps)
-#         targets = torch.clamp(targets, eps, 1. - eps)
-#         pt = (1 - targets) * (1 - outputs) + targets * outputs
-#         return (-(1. - pt) ** self.gamma * torch.log(pt)).mean()
-
-
-# class ComboLoss(nn.Module):
-#     def __init__(self, weights, per_image=False, channel_weights=[1, 0.5, 0.5], channel_losses=None):
-#         super().__init__()
-#         self.weights = weights
-#         self.bce = nn.BCEWithLogitsLoss()
-#         self.dice = DiceLoss(per_image=False)
-#         self.jaccard = JaccardLoss(per_image=False)
-#         # self.lovasz = LovaszLoss(per_image=per_image)
-#         # self.lovasz_sigmoid = LovaszLossSigmoid(per_image=per_image)
-#         self.focal = FocalLoss2d()
-#         self.mapping = {'bce': self.bce,
-#                         'dice': self.dice,
-#                         'focal': self.focal,
-#                         'jaccard': self.jaccard,
-#                         # 'lovasz': self.lovasz,
-#                         # 'lovasz_sigmoid': self.lovasz_sigmoid
-#                         }
-#         self.expect_sigmoid = {'dice', 'focal', 'jaccard', 'lovasz_sigmoid'}
-#         self.per_channel = {'dice', 'jaccard', 'lovasz_sigmoid'}
-#         self.values = {}
-#         self.channel_weights = channel_weights
-#         self.channel_losses = channel_losses
-
-#     def forward(self, outputs, targets):
-#         loss = 0
-#         weights = self.weights
-#         sigmoid_input = torch.sigmoid(outputs)
-#         for k, v in weights.items():
-#             if not v:
-#                 continue
-#             val = 0
-#             if k in self.per_channel:
-#                 channels = targets.size(1)
-#                 for c in range(channels):
-#                     if not self.channel_losses or k in self.channel_losses[c]:
-#                         val += self.channel_weights[c] * self.mapping[k](sigmoid_input[:, c, ...] if k in self.expect_sigmoid else outputs[:, c, ...],
-#                                                targets[:, c, ...])
-
-#             else:
-#                 val = self.mapping[k](sigmoid_input if k in self.expect_sigmoid else outputs, targets)
-
-#             self.values[k] = val
-#             loss += self.weights[k] * val
-#         return loss.clamp(min=1e-5)
