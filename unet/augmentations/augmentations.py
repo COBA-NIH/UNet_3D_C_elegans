@@ -14,6 +14,7 @@ class Compose:
         self.transforms = transforms  # + [Contiguous(always_apply=True)] # Ensure outputs are always contiguous
         self.p = p
         self.targets = targets
+        # assert self.targets in ["image", "mask", "wmap"], f"Expected targets to be in ['image', 'mask', 'wmap'], got {self.targets}."
 
     def get_always_apply_transforms(self):
         """If a transformation is to be always applied, find them."""
@@ -39,7 +40,7 @@ class Compose:
 class Transform:
     """Base transformation class. Mostly changed with super().__init__()"""
 
-    def __init__(self, always_apply=False, p=0.5, paired=False):
+    def __init__(self, always_apply=False, p=0.5, paired=False, channel_axis=None):
         # Ensure the probability is in range
         assert 0 <= p <= 1
         # Determine if the transform is essential
@@ -48,6 +49,7 @@ class Transform:
         # Controls if augmentations should be applied
         # in the same function call
         self.paired = paired
+        self.channel_axis = channel_axis
 
     def __call__(self, targets, **data):
         # For paired augmentations, transform is never directly called, it's always
@@ -56,6 +58,10 @@ class Transform:
             params = self.get_params(**data)
 
             for k, v in data.items():
+                if self.channel_axis is not None:
+                    # If there is a channel dimension, split channels into 
+                    # a list of arrays
+                    v = list(np.swapaxes(v, 0, self.channel_axis))
                 if k in targets[0]:
                     data[k] = self.apply(v, **params)
                 else:
@@ -66,8 +72,6 @@ class Transform:
         a random variable that needs to be available to both image and
         mask augmentations"""
         return {}
-
-        return data
 
     def apply(self, volume, **params):
         """Shouldn't end up here for transformations. If you do,
@@ -117,7 +121,14 @@ class DualTransform(Transform):
                 for k, v in data.items():
                     # If the key is an image, apply it
                     if k in targets[0]:
-                        data[k] = self.apply(v, **params)
+                        if self.channel_axis is not None:
+                            # If there is a channel dimension, split channels into 
+                            # a list of arrays
+                            v = list(np.swapaxes(v, 0, self.channel_axis))
+                            v = self.apply(v, **params)
+                            data[k] = np.stack(v, axis=self.channel_axis)
+                        else:
+                            data[k] = self.apply(v, **params)
                     # If the key is a mask, apply that method
                     # Why apply them differently? Well, you don't want resizing of a binary
                     # mask to have interpolation added, do you?
@@ -228,10 +239,9 @@ def labels_to_edges_and_centroids(labels, connectivity, blur, centroid_pad):
         # GT is blank
         output = [labels, labels]
 
-    foreground = np.stack(output, axis=0)
     # Add background as a class
     background = np.zeros_like(labels)
-    background[np.sum(foreground, axis=0) == 0] = 1
+    background[labels == 0] = 1
     output.insert(0, background)
     return np.stack(output, axis=0)
 
@@ -393,7 +403,7 @@ class RandomRotate2D(DualTransform):
         return scipy.ndimage.rotate(mask, axes=self.axes, angle=angle, order=0)
 
     def apply_to_wmap(self, wmap, angle):
-        """One-hot encoded has shape (channels, spatial), so we rorate on 
+        """One-hot encoded has shape (channels, spatial), so we rotate on 
         axes 2, 3"""
         return scipy.ndimage.rotate(wmap, axes=(2, 3), angle=angle, order=0)
 
@@ -444,21 +454,27 @@ class RandomScale(DualTransform):
 
 
 class RandomRot90(DualTransform):
-    def __init__(self, axis=(1, 2), p=1.0):
-        super().__init__(p=p)
+    def __init__(self, axis=(1, 2), p=1.0, channel_axis=None):
+        super().__init__(p=p, channel_axis=channel_axis)
         self.axis = axis
 
     def get_params(self, **data):
         return {"rotations": np.random.randint(0, 4)}
 
     def apply(self, image, rotations):
-        return np.rot90(image, rotations, axes=self.axis)
+        if isinstance(image, list):
+            for i, ch_img in enumerate(image):
+                print(i)
+                image[i] = np.rot90(ch_img, rotations, axes=self.axis)
+            return image
+        else:
+            return np.rot90(image, rotations, axes=self.axis)
 
     def apply_to_mask(self, mask, rotations):
         return np.rot90(mask, rotations, axes=self.axis)
 
     def apply_to_wmap(self, wmap, rotations):
-        """One-hot encoded has shape (channels, spatial), so we rorate on 
+        """One-hot encoded has shape (channels, spatial), so we rotate on 
         axes 2, 3"""
         return np.rot90(wmap, rotations, axes=(2, 3))
 
@@ -542,11 +558,9 @@ def edges_and_centroids(
 
     if one_hot:
         output = [edges, centroids]
-        # Find foreground classes
-        foreground = np.sum(output, axis=0)
         background = np.zeros_like(labels)
         # Background is where there is no foreground
-        background[foreground == 0] = 1
+        background[labels == 0] = 1
         # Make background the 0th index
         output.insert(0, background)
         return np.stack(output, axis=0)
