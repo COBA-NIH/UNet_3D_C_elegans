@@ -480,14 +480,45 @@ class RandomRot90(DualTransform):
 
 
 class ElasticDeform(DualTransform):
-    def __init__(self, paired=True, sigma=25, points=3, mode="constant", axis=(1, 2), p=1.0):
+    def __init__(self, sigma=25, points=3, mode="constant", axis=(1, 2), p=1.0, channel_axis=None):
         """Paired controls if the apply method should pass both image and mask
         to the same apply method"""
-        super().__init__(p=p, paired=True)
+        super().__init__(p=p, channel_axis=channel_axis)
         self.sigma = sigma
         self.points = points
         self.axis = axis # Axis on which to apply deformation (skip z)
         self.mode = mode
+        self.channel_axis = channel_axis
+
+    def apply_to_all(self, image, mask, wmap=None):
+        """Convert 4D (multiple channel) input images or wmap
+        into a flattened list of 3D arrays for elasticdeform"""
+        # Detect how many channels
+        num_channels = image.shape[self.channel_axis]
+
+        # Flatten into a list
+        ch_imgs = [image[i,...] for i in range(num_channels)]
+        data = [image, mask]
+        data.extend(ch_imgs)
+
+        # Iterpolate only the raw pixels
+        interpolate_order = np.zeros(len(data))
+        interpolate_order[0:num_channels] = 1
+
+        # Perform elasticdeformation
+        data = elasticdeform.deform_random_grid(
+            data, 
+            sigma=self.sigma, 
+            points=self.points, 
+            axis=self.axis,
+            order=interpolate_order, 
+            mode=self.mode,
+        )
+
+        # Use slices to stack output
+        image = np.stack(data[0:num_channels], axis=0)
+
+        return image, data[1], wmap
 
     def apply(self, image, mask, weight_map=None):
         if weight_map is not None:
