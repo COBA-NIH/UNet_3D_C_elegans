@@ -27,6 +27,7 @@ class Compose:
     def __call__(self, **data):
         """When Compose is actually called (ie. when passed data), check the Compose probability
         and then apply each transform in the list if True"""
+        # Probability for all of compose
         need_to_run = random.random() < self.p
         transforms_to_apply = (
             self.transforms if need_to_run else self.get_always_apply_transforms()
@@ -59,7 +60,7 @@ class Transform:
 
             for k, v in data.items():
                 if self.channel_axis is not None:
-                    # If there is a channel dimension, split channels into 
+                    # If there is a channel dimension, split channels into
                     # a list of arrays
                     v = list(np.swapaxes(v, 0, self.channel_axis))
                 if k in targets[0]:
@@ -122,7 +123,7 @@ class DualTransform(Transform):
                     # If the key is an image, apply it
                     if k in targets[0]:
                         if self.channel_axis is not None:
-                            # If there is a channel dimension, split channels into 
+                            # If there is a channel dimension, split channels into
                             # a list of arrays
                             v = list(np.swapaxes(v, 0, self.channel_axis))
                             v = self.apply(v, **params)
@@ -148,7 +149,7 @@ class DualTransform(Transform):
         return self.apply(mask, **params)
 
     def apply_to_wmap(self, wmap, **params):
-        """Most augmentations to the wmap are the same that are applied to the 
+        """Most augmentations to the wmap are the same that are applied to the
         mask. However, having an additional apply allows for the augmentations
         to deviate."""
         return self.apply(wmap, **params)
@@ -289,7 +290,7 @@ class RandomGuassianBlur(DualTransform):
         return mask
 
     def apply_to_wmap(self, wmap):
-        return wmap     
+        return wmap
 
 
 def random_gaussian_noise(input_array, scale=[0, 1]):
@@ -403,7 +404,7 @@ class RandomRotate2D(DualTransform):
         return scipy.ndimage.rotate(mask, axes=self.axes, angle=angle, order=0)
 
     def apply_to_wmap(self, wmap, angle):
-        """One-hot encoded has shape (channels, spatial), so we rotate on 
+        """One-hot encoded has shape (channels, spatial), so we rotate on
         axes 2, 3"""
         return scipy.ndimage.rotate(wmap, axes=(2, 3), angle=angle, order=0)
 
@@ -464,7 +465,6 @@ class RandomRot90(DualTransform):
     def apply(self, image, rotations):
         if isinstance(image, list):
             for i, ch_img in enumerate(image):
-                print(i)
                 image[i] = np.rot90(ch_img, rotations, axes=self.axis)
             return image
         else:
@@ -474,91 +474,71 @@ class RandomRot90(DualTransform):
         return np.rot90(mask, rotations, axes=self.axis)
 
     def apply_to_wmap(self, wmap, rotations):
-        """One-hot encoded has shape (channels, spatial), so we rotate on 
+        """One-hot encoded has shape (channels, spatial), so we rotate on
         axes 2, 3"""
         return np.rot90(wmap, rotations, axes=(2, 3))
 
 
 class ElasticDeform(DualTransform):
-    def __init__(self, sigma=25, points=3, mode="constant", axis=(1, 2), p=1.0, channel_axis=None):
-        """Paired controls if the apply method should pass both image and mask
-        to the same apply method"""
-        super().__init__(p=p, channel_axis=channel_axis)
+    def __init__(
+        self,
+        sigma=25,
+        points=3,
+        mode="mirror",
+        axis=(1, 2),
+        p=1.0,
+        channel_axis=None,
+    ):
+        # paired=True since we will use both images and masks in the same self.apply call
+        super().__init__(p=p, paired=True)
         self.sigma = sigma
         self.points = points
-        self.axis = axis # Axis on which to apply deformation (skip z)
+        self.axis = axis  # Axis on which to apply deformation (default skips z at 0th)
         self.mode = mode
         self.channel_axis = channel_axis
 
-    def apply_to_all(self, image, mask, wmap=None):
+    def apply(self, image, mask, wmap=None):
         """Convert 4D (multiple channel) input images or wmap
         into a flattened list of 3D arrays for elasticdeform"""
         # Detect how many channels
-        num_channels = image.shape[self.channel_axis]
+        if self.channel_axis is not None:
+            num_channels = image.shape[self.channel_axis]
+            # Flatten into a list
+            data = [image[i, ...] for i in range(num_channels)]
+            data.append(mask)
+        else:
+            data = [image, mask]
+            num_channels = 1
 
-        # Flatten into a list
-        ch_imgs = [image[i,...] for i in range(num_channels)]
-        data = [image, mask]
-        data.extend(ch_imgs)
+        if wmap is not None:
+            n_classes = weight_map.shape[0]
+            weight_maps = [weight_map[i, ...] for i in range(n_classes)]
+            data.extend(weight_maps)
 
-        # Iterpolate only the raw pixels
-        interpolate_order = np.zeros(len(data))
+        # Iterpolate only the raw image pixels
+        interpolate_order = np.zeros(len(data), dtype=int)
         interpolate_order[0:num_channels] = 1
+        interpolate_order = list(interpolate_order)
 
         # Perform elasticdeformation
         data = elasticdeform.deform_random_grid(
-            data, 
-            sigma=self.sigma, 
-            points=self.points, 
+            data,
+            sigma=self.sigma,
+            points=self.points,
             axis=self.axis,
-            order=interpolate_order, 
+            order=interpolate_order,
             mode=self.mode,
         )
 
-        # Use slices to stack output
+        # Use slices to stack output raw image back into
+        # a multichannel image, if applicable
         image = np.stack(data[0:num_channels], axis=0)
 
-        return image, data[1], wmap
-
-    def apply(self, image, mask, weight_map=None):
-        if weight_map is not None:
-            # wmap is one-hot encoded with shape (channels, spatial)
-            # but the shape must be the same for deform_random_grid
-            # Split along the channel axis, pass to deform, and then stack
-            n_classes = weight_map.shape[0]
-            weight_maps = [weight_map[i,...] for i in range(n_classes)]
-
-            data = [image, mask]
-            data.extend(weight_maps)
-
-            data = elasticdeform.deform_random_grid(
-                data, 
-                sigma=self.sigma, 
-                points=self.points, 
-                axis=self.axis,
-                order=[1, 0, 0, 0, 0], # Iterpolate only the raw pixels
-                mode=self.mode,
-                # mode="constant", # Leads to background
-                # mode="nearest", # raw pixels significantly warped
-                # mode="wrap", # similar to nearest
-                # mode="reflect", # Leads to incomplete edges
-                # mode="mirror", # Leads to some strange object shapes
-            )
-
+        if wmap is not None:
             weight_map = np.stack(data[2:], axis=0)
-
-            return data[0], data[1], weight_map
+            return image, data[num_channels], weight_map
         else:
-            image, mask = elasticdeform.deform_random_grid(
-                [image, mask], 
-                sigma=self.sigma, 
-                points=self.points, 
-                axis=self.axis,
-                order=[1, 0],
-                mode="mirror",
-            )
-            
-            return image, mask
+            return image, data[num_channels]  # [num_channels] is the mask index
 
 
 def edges_and_centroids(
@@ -614,7 +594,12 @@ class EdgesAndCentroids(DualTransform):
         return image
 
     def apply_to_mask(self, mask):
-        return edges_and_centroids(mask, mode=self.mode, connectivity=self.connectivity, iterations=self.iterations)
+        return edges_and_centroids(
+            mask,
+            mode=self.mode,
+            connectivity=self.connectivity,
+            iterations=self.iterations,
+        )
 
     def apply_to_wmap(self, wmap):
         return wmap
@@ -622,16 +607,19 @@ class EdgesAndCentroids(DualTransform):
 
 class BlurMasks(DualTransform):
     """Apply Gaussian blur to masks only"""
+
     def __init__(self, sigma=2, channel_axis=0, always_apply=True):
         super().__init__(always_apply)
         self.sigma = sigma
         self.channel_axis = channel_axis
-    
+
     def apply(self, image):
         return image
 
     def apply_to_mask(self, mask):
-        return skimage.filters.gaussian(mask, sigma=self.sigma, channel_axis=self.channel_axis)
+        return skimage.filters.gaussian(
+            mask, sigma=self.sigma, channel_axis=self.channel_axis
+        )
 
     def apply_to_wmap(self, wmap):
         # return skimage.filters.gaussian(wmap, sigma=self.sigma)
