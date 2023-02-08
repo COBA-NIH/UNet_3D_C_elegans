@@ -4,6 +4,7 @@ import numpy as np
 import random
 import scipy
 import elasticdeform
+from collections.abc import Iterable
 
 
 class Compose:
@@ -604,22 +605,101 @@ class EdgesAndCentroids(DualTransform):
     def apply_to_wmap(self, wmap):
         return wmap
 
+def edges_and_centroids2(
+    labels,
+    mode,
+    connectivity=1,
+    dilation=1,
+    one_hot=True
+    ):
+    """Centroids are calculated using skimage regionprops and then 
+    dilated. Gives a more uniform centroid shape, independent of GT size"""
+    """Calculate the border around objects and then subtract this border from
+    the object, reducing the object size"""
+    label_properties = skimage.measure.regionprops(labels.astype(int))
+    # Gather centroids
+    centroids = [prop.centroid for prop in label_properties]
+    # Round centroids
+    centroids = np.round(centroids).astype(int)
+    # Create a image to add the centroids to
+    centroid_image = np.zeros_like(labels)
+    # Add centroids 
+    # .T transpose will make the centroid array have shape
+    # (dimension, num_centroids) ie. for a 3D image (3, X)
+    centroid_image[tuple(centroids.T)] = 1
+    # Dilate centroid markers
+    centroid_image = skimage.morphology.dilation(centroid_image, skimage.morphology.ball(dilation))
+
+    edges = skimage.segmentation.find_boundaries(
+            labels, connectivity=connectivity, mode=mode
+        )
+
+    if one_hot:
+        background = np.zeros_like(labels)
+        # Background is where there is no GT
+        background[labels == 0] = 1
+        output = [background, edges, centroid_image]
+        return np.stack(output, axis=0)
+    else:
+        # Bump centroid label up to 2
+        centroid_image[centroid_image == 1] = 2
+        output = np.stack([edges, centroid_image], axis=0)
+        return np.max(output, axis=0)
+
+
+class EdgesAndCentroids2(DualTransform):
+    def __init__(self, mode="thick", connectivity=1, dilation=1, always_apply=True):
+        super().__init__(always_apply)
+        self.mode = mode
+        self.connectivity = connectivity
+        self.dilation = dilation
+
+    def apply(self, image):
+        """The image is not changed"""
+        return image
+
+    def apply_to_mask(self, mask):
+        return edges_and_centroids2(
+            mask,
+            mode=self.mode,
+            connectivity=self.connectivity,
+            dilation=self.dilation,
+        )
+
+    def apply_to_wmap(self, wmap):
+        return wmap
+
 
 class BlurMasks(DualTransform):
     """Apply Gaussian blur to masks only"""
 
-    def __init__(self, sigma=2, channel_axis=0, always_apply=True):
+    def __init__(self, sigma=2, blur_axis=None, channel_axis=0, always_apply=True):
         super().__init__(always_apply)
         self.sigma = sigma
+        self.blur_axis = blur_axis
         self.channel_axis = channel_axis
 
     def apply(self, image):
         return image
 
     def apply_to_mask(self, mask):
-        return skimage.filters.gaussian(
-            mask, sigma=self.sigma, channel_axis=self.channel_axis
-        )
+        # Blur axis assumes the channel dim is 0th. Not ideal.
+        if self.blur_axis is not None:
+            if not isinstance(self.blur_axis, Iterable):
+                mask[self.blur_axis,...] = skimage.filters.gaussian(
+                    mask[self.blur_axis,...], sigma=self.sigma
+                    )
+                return mask
+            else:
+                for ax in self.blur_axis:
+                    mask[ax,...] = skimage.filters.gaussian(
+                        mask[ax,...], sigma=self.sigma
+                        )   
+                return mask
+        else:
+            return skimage.filters.gaussian(
+                mask, sigma=self.sigma, channel_axis=self.channel_axis
+            )
 
     def apply_to_wmap(self, wmap):
         # return skimage.filters.gaussian(wmap, sigma=self.sigma)
