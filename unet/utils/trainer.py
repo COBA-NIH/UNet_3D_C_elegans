@@ -33,39 +33,6 @@ class RunTraining:
 
         self.writer = SummaryWriter("training_logs")
 
-    def calculate_performance(self, prediction, target, iterable, train_or_val):
-        """Assumes output from model is sigmoidal"""
-        # prediction = prediction.detach().sigmoid().cpu().numpy().flatten()
-
-        # Testing softmax on the class axis 
-        prediction = torch.softmax(prediction, axis=1)
-        prediction = prediction.detach().cpu().numpy().flatten()
-        target = target.long().detach().cpu().numpy().flatten()
-
-        # Convert probabilities into binary predictions
-        th_prediction = prediction > 0.5
-
-        # Dict to hold stats
-        stats = {}
-
-        # Calculate metrics
-        # roc = sklearn.metrics.roc_auc_score(target, prediction)
-        stats["precision"] = sklearn.metrics.precision_score(target, th_prediction)
-        stats["recall"] = sklearn.metrics.recall_score(target, th_prediction)
-        stats["accuracy"] = sklearn.metrics.accuracy_score(target, th_prediction)
-        stats["f1"] = sklearn.metrics.f1_score(target, th_prediction)
-        stats["jaccard"] = sklearn.metrics.jaccard_score(target, th_prediction)
-        stats["dice_coef"] = self.dice_coef(target, th_prediction)
-
-        self.writer.add_scalar(f"{train_or_val}/Accuracy", stats["accuracy"], iterable+1)
-        self.writer.add_scalar(f"{train_or_val}/Precision", stats["precision"], iterable+1)
-        self.writer.add_scalar(f"{train_or_val}/Recall", stats["recall"], iterable+1)
-        self.writer.add_scalar(f"{train_or_val}/F1", stats["f1"], iterable+1)
-        self.writer.add_scalar(f"{train_or_val}/jaccard", stats["jaccard"], iterable+1)
-        self.writer.add_scalar(f"{train_or_val}/dice_coef", stats["dice_coef"], iterable+1)
-
-        return stats
-
     def dice_coef(self, y_true, y_pred):
         intersection = np.sum((y_true+y_pred == 2))
         union = np.sum(y_true) + np.sum(y_pred)
@@ -113,9 +80,50 @@ class RunTraining:
         if is_best:
             # If the model is best so far, rename it
             shutil.copyfile(filename, "best_checkpoint.pytorch")
-        
-    def train(self):
 
+    def update_stats(self, prediction, target, stat_dict):
+        # Testing softmax on the class axis 
+        prediction = torch.softmax(prediction, axis=1)
+        prediction = prediction.detach().cpu().numpy().flatten()
+        target = target.long().detach().cpu().numpy().flatten()
+
+        # Convert probabilities into binary predictions
+        th_prediction = prediction > 0.5
+
+        # Calculate metrics
+        # roc = sklearn.metrics.roc_auc_score(target, prediction)
+        precision = sklearn.metrics.precision_score(target, th_prediction)
+        recall = sklearn.metrics.recall_score(target, th_prediction)
+        accuracy = sklearn.metrics.accuracy_score(target, th_prediction)
+        f1 = sklearn.metrics.f1_score(target, th_prediction)
+        jaccard = sklearn.metrics.jaccard_score(target, th_prediction)
+        dice_coef = self.dice_coef(target, th_prediction)
+
+        stat_dict["precision"] += precision
+        stat_dict["recall"] += recall
+        stat_dict["accuracy"] += accuracy
+        stat_dict["f1"] += f1
+        stat_dict["dice_coef"] += dice_coef
+
+        return stat_dict
+
+    def write_epoch_stats(self, stat_dict, train_or_val):
+        self.writer.add_scalar(f"{train_or_val}/Accuracy", stat_dict["accuracy"], self.epoch+1)
+        self.writer.add_scalar(f"{train_or_val}/Precision", stat_dict["precision"], self.epoch+1)
+        self.writer.add_scalar(f"{train_or_val}/Recall", stat_dict["recall"], self.epoch+1)
+        self.writer.add_scalar(f"{train_or_val}/F1", stat_dict["f1"], self.epoch+1)
+        self.writer.add_scalar(f"{train_or_val}/jaccard", stat_dict["jaccard"], self.epoch+1)
+        self.writer.add_scalar(f"{train_or_val}/dice_coef", stat_dict["dice_coef"], self.epoch+1)
+
+    def train(self):
+        train_stats = {
+            "precision": 0.0,
+            "recall": 0.0,
+            "accuracy": 0.0,
+            "f1": 0.0,
+            "jaccard": 0.0,
+            "dice_coef": 0.0
+        }
         train_loss = 0.0
         train_n = 0
 
@@ -155,20 +163,28 @@ class RunTraining:
             # Used for calculating average metrics later
             train_n += X.size(0)
 
-        stats = self.calculate_performance(
-            prediction,
-            y,
-            self.epoch,
-            "train"
-        )
+            # train_stats = self.update_stats(prediction, y, train_stats)
+
+        # Update stats across all training samples in epoch
+        # train_stats = {k: v / train_n for k, v in train_stats.items()}
+
+        # self.write_epoch_stats(train_stats, "train")
         
         epoch_loss = train_loss / train_n
 
         self.writer.add_scalar(f"Train-Epoch/Loss", epoch_loss, self.epoch+1)
 
-        return epoch_loss, stats
+        return epoch_loss, train_stats
     
     def validate(self):
+        val_stats = {
+            "precision": 0.0,
+            "recall": 0.0,
+            "accuracy": 0.0,
+            "f1": 0.0,
+            "jaccard": 0.0,
+            "dice_coef": 0.0
+        }
         val_loss = 0.0
         val_n = 0
         self.model.eval()
@@ -190,15 +206,15 @@ class RunTraining:
                 val_loss += loss.item() * X.size(0)
                 val_n += X.size(0)
 
-        val_loss = val_loss / val_n
+                # val_stats = self.update_stats(prediction, y, val_stats)
 
-        stats = self.calculate_performance(
-                    prediction,
-                    y,
-                    self.epoch,
-                    "val"
-                    )
+        # Update stats across all training samples in epoch
+        # val_stats = {k: v / val_n for k, v in val_stats.items()}
+
+        # self.write_epoch_stats(val_stats, "train")
+
+        val_loss = val_loss / val_n
 
         self.writer.add_scalar(f"Val-Epoch/Loss", val_loss, self.epoch+1)
 
-        return val_loss, stats
+        return val_loss, val_stats
