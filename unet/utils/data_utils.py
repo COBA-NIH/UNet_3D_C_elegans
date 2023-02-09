@@ -5,6 +5,7 @@ import torch
 import pathlib
 import torch.nn.functional as F
 import os
+import mahotas
 
 def generate_patches(image, patch_shape, stride_shape, unfold_dims=[0, 1, 2]):
     """Uses PyTorch unfolde to generate non-overlapping patches
@@ -215,3 +216,24 @@ def find_parameter_requires_grad(model):
             params_to_update.append(param)
             print("Training:", name)
     return params_to_update
+
+def watershed_from_edges(edges, threshold=0.5, erosion_footprint=skimage.morphology.ball(1)):
+    """Perform watershed from an edge map.
+    
+    Seed objects are calculated from regional minima in the edge map. These seeds are then eroded
+    
+    Resulting watershed segmentation will require some post-processing, like background removal."""
+
+    th_edges = edges > threshold
+
+    dist = scipy.ndimage.distance_transform_edt(th_edges)
+
+    seeds = mahotas.regmin(dist)
+
+    seeds = skimage.morphology.erosion(seeds, erosion_footprint)
+
+    seeds = scipy.ndimage.label(seeds)[0]
+
+    ws = skimage.segmentation.watershed(th_edges, seeds)
+
+    return ws
