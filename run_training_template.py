@@ -6,6 +6,7 @@ import pandas as pd
 import sklearn.model_selection
 from unet.utils.load_data import MaddoxDataset, RandomData
 from unet.networks.unet3d import UNet3D
+from unet.networks.unet3d import SingleConv
 # from unet.networks.unet3d import UnetModel
 import unet.augmentations.augmentations as aug
 from unet.utils.loss import WeightedBCELoss, WeightedBCEDiceLoss
@@ -114,7 +115,9 @@ def main_worker(args):
 
     # model = utils.set_parameter_requires_grad(model, trainable=True)
     model = utils.set_parameter_requires_grad(model, trainable=True, trainable_layer_name=["decoder"])
-
+    # Change the input layer
+    model.encoders[0].basic_module.SingleConv1 = SingleConv(2, 16)
+    # Change the output layer
     model.final_conv = nn.Conv3d(32, 3, kernel_size=1, stride=1)
 
     params_to_update = utils.find_parameter_requires_grad(model)
