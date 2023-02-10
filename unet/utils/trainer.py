@@ -27,8 +27,7 @@ class RunTraining:
         self.scheduler = scheduler
         self.num_epochs = num_epochs
 
-        # For early stopping
-        self.best_val_score = 0
+        # For early stopping (patience counter)
         self.counter = 0
 
         self.writer = SummaryWriter("training_logs")
@@ -60,16 +59,21 @@ class RunTraining:
             self.save_checkpoint({
                 "epoch": self.epoch + 1,
                 "state_dict": self.model.state_dict() if not isinstance(self.model, nn.DataParallel) else self.model.module.state_dict(),
-                # "optimizer" : self.optimizer.state_dict(),
-                # "scheduler" : self.scheduler.state_dict(),
             }, is_best)
 
-    # def stop_check(self, val_loss, patience=20, delta=0.1):
-    #     return NotImplementedError()
-    #     if self.best_val_score + delta >= val_loss:
-    #         self.counter += 1
-    #         if self.counter >= patience:
-    #             return True
+            self.stop_check(current_val_loss, best_val_loss)
+
+    def stop_check(self, val_loss, best_val_loss, patience=40, delta=0.1):
+        print(f"val_loss: {val_loss}, best_val_loss: {best_val_loss}")
+        if best_val_loss + delta > val_loss:
+            # Validation accuracy has improved, reset counter
+            self.counter = 0
+        elif val_loss > best_val_loss + delta:
+            # Validation loss has not improved
+            self.counter += 1
+            if self.counter >= patience:
+                print(f"Early stopping at epoch {self.epoch}. Best loss: {best_val_loss}")
+                return
 
 
     def save_checkpoint(self, 
@@ -146,7 +150,11 @@ class RunTraining:
             prediction = self.model(X)
 
             # Find the loss of the prediction when compared to the GT
-            loss = self.loss_fn(prediction, y, weight_map)
+            if weight_map is not None:
+                loss = self.loss_fn(prediction, y, weight_map)
+            else:
+                # Since some loss functions are not weighted
+                loss = self.loss_fn(prediction, y)
 
             # Using this loss, calculate the gradients of loss for all parameters
             loss.backward()
@@ -201,7 +209,11 @@ class RunTraining:
                     weight_map = None
 
                 prediction = self.model(X)
-                loss = self.loss_fn(prediction, y, weight_map)
+
+                if weight_map is not None:
+                    loss = self.loss_fn(prediction, y, weight_map)
+                else:
+                    loss = self.loss_fn(prediction, y)
 
                 val_loss += loss.item() * X.size(0)
                 val_n += X.size(0)
