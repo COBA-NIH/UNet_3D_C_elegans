@@ -192,6 +192,22 @@ class Resize(DualTransform):
         return resize(wmap, new_shape=self.shape, interpolation=0)
 
 
+class LabelsToEdges(DualTransform):
+    def __init__(self, mode="thick", connectivity=2, always_apply=True):
+        super().__init__(always_apply=always_apply)
+        self.mode = mode
+        self.connectivity = connectivity
+    
+    def apply(self, image):
+        return image
+
+    def apply_to_mask(self, mask):
+        edges = skimage.segmentation.find_boundaries(mask, mode=self.mode, connectivity=self.connectivity)
+        return edges
+
+    def apply_to_wmap(self, wmap):
+        return wmap
+
 class LabelsToEdgesAndCentroids(DualTransform):
     def __init__(self, mode="thick", connectivity=2, blur=2, centroid_pad=2, p=1):
         super().__init__(p=p)
@@ -335,26 +351,34 @@ class RandomPoissonNoise(DualTransform):
         return wmap
 
 
-def normalize_img(image):
+def normalize_img(image, per_channel=False):
     # mean, std = image.mean(), image.std()
     # norm_image = (image - mean) / std
     # return norm_image
 
-    mean = np.mean(image)
-    std = np.std(image)
+    if per_channel:
+        # Get the axes to compute mean for
+        axes = tuple(list(range(image.ndim)))[1:]
+        mean = np.mean(image, axis=axes, keepdims=True)
+        std = np.std(image, axis=axes, keepdims=True)
+    else:
+        mean = np.mean(image)
+        std = np.std(image)
 
     return (image - mean) / np.clip(std, a_min=1e-10, a_max=None)
 
 
 class Normalize(DualTransform):
     """Z-score normalization.
-    Normalizes the input image so that the mean is 0 and std is 1."""
-
-    def __init__(self, always_apply=True):
+    Normalizes the input image so that the mean is 0 and std is 1.
+    Can also normalize per channel for tensors with shape (C, spatial)
+    """
+    def __init__(self, always_apply=True, per_channel=False):
         super().__init__(always_apply)
+        self.per_channel = per_channel
 
     def apply(self, image):
-        return normalize_img(image)
+        return normalize_img(image, self.per_channel)
 
     def apply_to_mask(self, mask):
         return mask
@@ -386,6 +410,26 @@ class RandomContrastBrightness(DualTransform):
     def apply_to_wmap(self, wmap):
         return wmap
 
+class SelectChannel(DualTransform):
+    """Select specific channels to take forward
+    Allows for easy testing of which channels are 
+    the most influential for a successful segmentation
+    """
+    def __init__(self, channel=0, always_apply=True):
+        super().__init__(always_apply=always_apply)
+        self.channel = channel
+
+    def apply(self, image):
+        # Select the desired channel and add the channel dim back 
+        image = image[self.channel,...]
+        image = np.expand_dims(image, 0)
+        return image
+    
+    def apply_to_mask(self, mask):
+        return mask
+
+    def apply_to_wmap(self, wmap):
+        return wmap
 
 class RandomRotate2D(DualTransform):
     """Rotate a 3D image in axes (W, H)(1, 2)"""
@@ -393,7 +437,7 @@ class RandomRotate2D(DualTransform):
     def __init__(self, angle=30, p=1):
         super().__init__(p=p)
         self.angle = angle
-        self.axes = (1, 2)  # Width and height
+        self.axes = (-2, -1)  # Width and height
 
     def get_params(self, **data):
         return {"angle": np.random.randint(-self.angle, self.angle)}
@@ -407,7 +451,7 @@ class RandomRotate2D(DualTransform):
     def apply_to_wmap(self, wmap, angle):
         """One-hot encoded has shape (channels, spatial), so we rotate on
         axes 2, 3"""
-        return scipy.ndimage.rotate(wmap, axes=(2, 3), angle=angle, order=0)
+        return scipy.ndimage.rotate(wmap, axes=self.axes, angle=angle, order=0)
 
 
 class Flip(DualTransform):
@@ -456,9 +500,9 @@ class RandomScale(DualTransform):
 
 
 class RandomRot90(DualTransform):
-    def __init__(self, axis=(1, 2), p=1.0, channel_axis=None):
+    def __init__(self, p=1.0, channel_axis=None):
         super().__init__(p=p, channel_axis=channel_axis)
-        self.axis = axis
+        self.axis = (-2, -1)
 
     def get_params(self, **data):
         return {"rotations": np.random.randint(0, 4)}
@@ -477,7 +521,7 @@ class RandomRot90(DualTransform):
     def apply_to_wmap(self, wmap, rotations):
         """One-hot encoded has shape (channels, spatial), so we rotate on
         axes 2, 3"""
-        return np.rot90(wmap, rotations, axes=(2, 3))
+        return np.rot90(wmap, rotations, axes=self.axis)
 
 
 class ElasticDeform(DualTransform):
@@ -498,29 +542,33 @@ class ElasticDeform(DualTransform):
         self.mode = mode
         self.channel_axis = channel_axis
 
-    def apply(self, image, mask, wmap=None):
+    def apply(self, image, mask, weight_map=None):
         """Convert 4D (multiple channel) input images or wmap
         into a flattened list of 3D arrays for elasticdeform"""
         # Detect how many channels
+        if mask.ndim == 4:
+            # Channel dim is added if using patch data loader
+            mask = mask[0] # [0] to remove channel index
         if self.channel_axis is not None:
             num_channels = image.shape[self.channel_axis]
             # Flatten into a list
             data = [image[i, ...] for i in range(num_channels)]
-            data.append(mask)
+            data.append(mask) 
         else:
             data = [image, mask]
             num_channels = 1
 
-        if wmap is not None:
-            n_classes = weight_map.shape[0]
-            weight_maps = [weight_map[i, ...] for i in range(n_classes)]
-            data.extend(weight_maps)
+        if weight_map is not None:
+            # n_classes = weight_map.shape[0]
+            # weight_maps = [weight_map[i, ...] for i in range(n_classes)]
+            if weight_map.ndim == 4:
+                weight_map = weight_map[0,...]
+            data.append(weight_map)
 
         # Iterpolate only the raw image pixels
         interpolate_order = np.zeros(len(data), dtype=int)
         interpolate_order[0:num_channels] = 1
         interpolate_order = list(interpolate_order)
-
         # Perform elasticdeformation
         data = elasticdeform.deform_random_grid(
             data,
@@ -535,8 +583,8 @@ class ElasticDeform(DualTransform):
         # a multichannel image, if applicable
         image = np.stack(data[0:num_channels], axis=0)
 
-        if wmap is not None:
-            weight_map = np.stack(data[2:], axis=0)
+        if weight_map is not None:
+            weight_map = np.stack(data[num_channels+1:], axis=0)
             return image, data[num_channels], weight_map
         else:
             return image, data[num_channels]  # [num_channels] is the mask index
@@ -703,4 +751,20 @@ class BlurMasks(DualTransform):
 
     def apply_to_wmap(self, wmap):
         # return skimage.filters.gaussian(wmap, sigma=self.sigma)
+        return wmap
+
+class EdgeMaskWmap(DualTransform):
+    def __init__(self, always_apply=True):
+        super().__init__(always_apply=always_apply)
+
+    def apply(self, image):
+        return image
+    
+    def apply_to_mask(self, mask):
+        self.mask = mask
+        return mask
+
+    def apply_to_wmap(self, wmap):
+        wmap = self.mask + (wmap * (self.mask != 0))
+        # wmap = self.mask + wmap
         return wmap
