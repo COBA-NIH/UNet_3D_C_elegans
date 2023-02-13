@@ -18,8 +18,9 @@ import numpy as np
 
 
 class DiceLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, channel_dim=0):
         super().__init__()
+        self.channel_dim = channel_dim
 
     def dice_loss(self, prediction, target):
         # Make arrays 1D
@@ -28,8 +29,6 @@ class DiceLoss(nn.Module):
         target = target.float()
 
         intersection = (prediction * target).sum(-1)
-        print("intersection", intersection, prediction.shape, target.shape)
-        intersection = torch.tensor[1, 3, 3] * intersection
 
         loss = 1 - 2 * (intersection) / (prediction.sum() + target.sum())
         return loss
@@ -39,16 +38,50 @@ class DiceLoss(nn.Module):
 
         dice = self.dice_loss(prediction, target)
 
-        avg_channel_dice = 1. - torch.mean(dice)
+        return dice
 
-        return avg_channel_dice
-        # return dice
+class DiceLossAlt(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def dice_loss(self, prediction, target):
+        epsilon = 1e-6
+
+        # Make arrays 1D
+        prediction = prediction.flatten()
+        target = target.flatten()
+        target = target.float()
+
+        intersection = (prediction * target).sum()
+
+        loss = 2 * (intersection / ((prediction ** 2).sum() + (target ** 2).sum()).clamp(min=epsilon))
+
+        return (1. - loss).mean()
+    
+    def forward(self, prediction, target):
+        prediction = nn.Sigmoid()(prediction)
+
+        dice = self.dice_loss(prediction, target)
+
+        return dice
+
 
 class BCEDiceLoss(nn.Module):
     def __init__(self):
         super().__init__()
         self.bce = nn.BCEWithLogitsLoss()
         self.dice = DiceLoss()
+
+    def forward(self, prediction, target):
+        output = self.bce(prediction, target.float()) + self.dice(prediction, target)
+
+        return output
+
+class BCEDiceLossAlt(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.bce = nn.BCEWithLogitsLoss()
+        self.dice = DiceLossAlt()
 
     def forward(self, prediction, target):
         output = self.bce(prediction, target.float()) + self.dice(prediction, target)
@@ -78,81 +111,53 @@ class AbstractWeightedLoss(nn.Module):
             raise ValueError("Both class_weights and weight_map are requested but you can only have one")
         else:
             raise NotImplementedError
-class WeightedBCELoss(AbstractWeightedLoss):
+
+class WeightedBCELoss(nn.Module):
     def __init__(self, class_weights=None, per_image=False, per_channel=False):
-        super().__init__(class_weights)
+        super().__init__()
         self.class_weights = class_weights
         self.per_image = per_image
         self.per_channel = per_channel
         self.bce = nn.BCEWithLogitsLoss(reduction="none")
 
-    def forward(self, prediction, target, weights=None):
-        batch_size, n_channels = prediction.size(0), prediction.size(1)
+    def forward(self, prediction, target, weight_map=None):
+        prediction = prediction.sigmoid().flatten()
+        target = target.flatten().float()
+        weight_map = weight_map.flatten().float()
 
-        # n_parts to split tensor, dependeing on per-channel/image
-        # I don't think this is necessary...
-        n_parts = 1
-        if self.per_image:
-            n_parts = batch_size
-        if self.per_channel:
-            n_parts = batch_size * n_channels
-
-        # -1 to infer the shape based on n_parts
-        # prediction = prediction.contiguous().view(n_parts, -1)
-        # target = target.contiguous().view(n_parts, -1)
-        # weights = weights.contiguous().view(n_parts, -1)
-        prediction = prediction.view(n_parts, -1)
-        target = target.view(n_parts, -1)
-        weights = weights.view(n_parts, -1)
-
-        loss = self.bce(prediction, target) * weights
+        loss = self.bce(prediction, target) * weight_map
 
         loss = loss.mean()
 
         return loss
 
-class WeightedDiceLoss(AbstractWeightedLoss):
+class WeightedDiceLoss(nn.Module):
     """Pixel weighted dice loss"""
-    def __init__(self, device, class_weights=None, per_image=False, per_channel=False):
-        super().__init__(device, class_weights)
+    def __init__(self, class_weights=None, per_image=False, per_channel=False):
+        super().__init__()
         self.class_weights = class_weights
         self.per_image = per_image
         self.per_channel = per_channel
     
     def forward(self, prediction, target, weight_map):
-        eps = 1e-6
-        # n_parts to split tensor, dependeing on per-channel/image
-        n_parts = 1
-        if self.per_image:
-            n_parts = batch_size
-        if self.per_channel:
-            n_parts = batch_size * n_channels
+        prediction = prediction.sigmoid().flatten()
+        target = target.flatten().float()
+        weight_map = weight_map.flatten().float()
 
-        # -1 to infer the shape based on n_parts
-        # prediction = prediction.contiguous().view(n_parts, -1)
-        # target = target.contiguous().view(n_parts, -1)
-        # weights = weights.contiguous().view(n_parts, -1)
-        prediction = prediction.sigmoid().view(n_parts, -1)
-        target = target.view(n_parts, -1)
-        weights = weights.view(n_parts, -1)
+        intersection = (prediction * target * weight_map).sum()
+        loss = 2 * (intersection / ((prediction ** 2).sum() + (target ** 2).sum()).clamp(min=1e-6))
+        return (1. - loss).mean()
 
-        intersection = torch.sum(dice_output * dice_target * weights, dim=1)
-        union = torch.sum(prediction, dim=1) + torch.sum(target, dim=1) + eps
-        loss = (1 - (2 * intersection) / union).mean()
-        return loss
-
-
-class WeightedBCEDiceLoss(AbstractWeightedLoss):
+class WeightedBCEDiceLoss(nn.Module):
     """Pixel weighted BCE + Dice Loss"""
     def __init__(self, class_weights=None, per_image=False, per_channel=False):
-        super().__init__(class_weights)
+        super().__init__()
         self.class_weights = class_weights
         self.bce = WeightedBCELoss(class_weights=None, per_image=per_image, per_channel=per_channel)
-        self.dice = WeightedBCELoss(class_weights=None, per_image=per_image, per_channel=per_channel)
+        self.dice = WeightedDiceLoss(class_weights=None, per_image=per_image, per_channel=per_channel)
 
     def forward(self, prediction, target, weight_map=None):
-        weights = self.resolve_weights(target, weight_map).to(target.device)
-        loss = self.bce(prediction, target, weights) + self.dice(prediction, target, weights)
+        loss = self.bce(prediction, target, weight_map) + self.dice(prediction, target, weight_map)
         return loss
 
 
