@@ -321,12 +321,23 @@ def create_patch_dataset(load_data_csv, patch_size, save_dir=".", create_wmap=Fa
                 skimage.io.imsave(weight_map_fp, wmp, compression=("zlib", 1), check_contrast=False)
                 output_data_csv.loc[len(output_data_csv)] = [img_fp, mask_fp, weight_map_fp]
         else:
-            print("No!")
             for ind, (img, msk) in enumerate(zip(patch_iter(image), patch_iter(mask))):
                 img_fp, mask_fp = f"./patch_images/image_patch_{i}_{ind}.tiff", f"./patch_masks/mask_patch_{i}_{ind}.tiff"
                 skimage.io.imsave(img_fp, img[0], compression=("zlib", 1), check_contrast=False)
                 skimage.io.imsave(mask_fp, msk[0], compression=("zlib", 1), check_contrast=False)
-                output_data_csv.loc[len(load_datoutput_data_csva_csv)] = [img_fp, mask_fp]
+                output_data_csv.loc[len(output_data_csv)] = [img_fp, mask_fp]
 
     output_data_csv.to_csv("training_data.csv", index=False)
+
+
+def filter_objects(labels, max_size=100, min_size=10):
+    df = skimage.measure.regionprops_table(labels, properties=("label","equivalent_diameter_area"))
+    df = pd.DataFrame.from_dict(df)
+    min_objects = df[(df["equivalent_diameter_area"] < min_size)]["label"].values
+    max_objects = df[(df["equivalent_diameter_area"] > max_size)]["label"].values
+    remove_labels = np.concatenate((min_objects, max_objects), axis=0)
+    for rmv in remove_labels:
+        labels = np.where(labels == rmv, 0, labels)
+    labels = make_sequential(labels)
+    return labels
 
