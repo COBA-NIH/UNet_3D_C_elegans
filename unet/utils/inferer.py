@@ -71,15 +71,28 @@ class Inferer:
         
         inference_data_csv.to_csv("./output/inference_data.csv", index=False)
 
-    def run_multicut(self, prediction):
+    def run_multicut(self, prediction, planewise=False):
         """Performs multicut segmentation on a border prediction"""
-        ws, _ = distance_transform_watershed(
-            prediction,
-            threshold=0.5,
-            sigma_seeds=2.0,
-            min_size=15,
-            # sigma_weights=2.0
-            )
+        if planewise:
+            ws_kwargs = dict(threshold=0.5, sigma_seeds=2.0,
+                    #  sigma_weights=sigma_weights,
+                        min_size=15,
+                    #  pixel_pitch=pixel_pitch,
+                    #  apply_nonmax_suppression=apply_nonmax_suppression,
+                    #  mask=mask
+                        )
+            ws, _ = stacked_watershed(
+                prediction,
+                ws_function=distance_transform_watershed,
+                **ws_kwargs)
+        else:
+            ws, _ = distance_transform_watershed(
+                prediction,
+                threshold=0.5,
+                sigma_seeds=2.0,
+                min_size=15,
+                # sigma_weights=2.0
+                )
 
         rag = compute_rag(ws)
 
