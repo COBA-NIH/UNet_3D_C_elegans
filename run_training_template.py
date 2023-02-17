@@ -11,6 +11,7 @@ from unet.networks.unet3d import SingleConv
 import unet.augmentations.augmentations as aug
 from unet.utils.loss import WeightedBCELoss, WeightedBCEDiceLoss, BCEDiceLoss, BCEDiceLossAlt
 from unet.utils.trainer import RunTraining
+from unet.utils.inferer import Inferer
 import argparse
 import unet.utils.data_utils as utils
 
@@ -23,26 +24,55 @@ parser.add_argument("--batch", nargs="?", default=4, type=int)
 parser.add_argument("--epochs", nargs="?", default=10, type=int)
 parser.add_argument("--workers", nargs="?", default=4, type=int)
 parser.add_argument("--dummy", action="store_true")  # Use dummy data
+parser.add_argument("--withinference", action="store_true")
+
+params = {
+    "Normalize": {"per_channel": True},
+    "RandomContrastBrightness": {"p": 0.5},
+    "Flip": {"p": 0.5},
+    "RandomRot90": {"p": 0.5, "channel_axis": 0},
+    "RandomGuassianBlur": {"p": 0.5},
+    "RandomGaussianNoise": {"p": 0.5},
+    "RandomPoissonNoise": {"p": 0.5},
+    "ElasticDeform": {"sigma":10, "p":0.5, "channel_axis": 0, "mode":"mirror"},
+    "LabelsToEdges": {"connectivity":2},
+    "EdgeMaskWmap": {},
+    # "BlurMasks": {"sigma": 2}
+    "ToTensor": {},
+    "batch_size": args.batch,
+    "epochs": args.epochs,
+    "val_split": 0.2,
+    "patch_size": (24, 200, 200),
+    "create_wmap": True,
+    "lr": 1e-4,
+    "weight_decay": 1e-5,
+    "in_channels": 2,
+    "out_channels": 1,
+    "scheduler_factor": 0.2,
+    "scheduler_patience": 20,
+    "scheduler_mode": "min",
+    "loss_function": WeightedBCEDiceLoss
+}
 
 train_transforms = [
-    aug.RandomContrastBrightness(p=0.5),
-    aug.Flip(p=0.5),
-    aug.RandomRot90(p=0.5, channel_axis=0),
-    aug.RandomGuassianBlur(p=0.5),
-    aug.RandomGaussianNoise(p=0.5),
-    aug.RandomPoissonNoise(p=0.5),
-    aug.ElasticDeform(sigma=10, p=0.5, channel_axis=0, mode="mirror"),
-    aug.LabelsToEdges(connectivity=2),
+    aug.Normalize(**params["Normalize"]),
+    aug.RandomContrastBrightness(**params["RandomContrastBrightness"]),
+    aug.Flip(**params["Flip"]),
+    aug.RandomRot90(**params["RandomRot90"]),
+    aug.RandomGuassianBlur(**params["RandomGuassianBlur"]),
+    aug.RandomGaussianNoise(**params["RandomGaussianNoise"]),
+    aug.RandomPoissonNoise(**params["RandomPoissonNoise"]),
+    aug.ElasticDeform(**params["ElasticDeform"]),
+    aug.LabelsToEdges(**params["LabelsToEdges"]),
     aug.EdgeMaskWmap(),
     # aug.BlurMasks(sigma=2),
-    aug.Normalize(),
     aug.ToTensor()
 ]
 val_transforms = [
-    aug.LabelsToEdges(connectivity=2),
-    aug.EdgeMaskWmap(),
+    aug.Normalize(**params["Normalize"]),
+    aug.LabelsToEdges(**params["LabelsToEdges"]),
+    aug.EdgeMaskWmap(**params["EdgeMaskWmap"]),
     # aug.BlurMasks(sigma=2),
-    aug.Normalize(),
     aug.ToTensor()
 ]
 
@@ -57,31 +87,31 @@ def main_worker(args):
     if args.dummy:
         print("----- Using dummy data ------")
         train_ds = RandomData(
-            data_shape=(1, 24, 24, 24),
+            data_shape=(1, 1, *params["patch_size"]),
             dataset_size=20,
-            num_classes=3,
+            num_classes=1,
             train_val="train"
         )
         val_ds = RandomData(
-            data_shape=(1, 24, 24, 24), 
+            data_shape=(1, 1, *params["patch_size"]), 
             dataset_size=5, 
-            num_classes=3, 
+            num_classes=1, 
             train_val="val"
         )
     else:
         load_csv = pd.read_csv(args.data)
         # Create the dataset (patches and weight maps, if required)
-        utils.create_patch_dataset(load_csv, (24, 200, 200), create_wmap=True, w0=3)
+        utils.create_patch_dataset(load_csv, patch_size=params["patch_size"], create_wmap=params["create_wmap"])
         training_data = pd.read_csv("training_data.csv")
         train_dataset, val_dataset = sklearn.model_selection.train_test_split(
-            training_data, test_size=0.2
+            training_data, test_size=params["val_split"]
         )
         print(
             f"loading data from: {args.data}. Train data of length {train_dataset.shape[0]} and val data of length {val_dataset.shape[0]}"
         )
-        train_ds = MaddoxDataset(data_csv=train_dataset, transforms=train_transforms, targets=targets, train_val="train", wmap=True)
+        train_ds = MaddoxDataset(data_csv=train_dataset, transforms=train_transforms, targets=targets, train_val="train")
 
-        val_ds = MaddoxDataset(data_csv=val_dataset, transforms=val_transforms, targets=targets, train_val="val", wmap=True)
+        val_ds = MaddoxDataset(data_csv=val_dataset, transforms=val_transforms, targets=targets, train_val="val")
 
     if torch.cuda.is_available():
         # Find fastest conv
@@ -122,7 +152,7 @@ def main_worker(args):
 
     model = utils.set_parameter_requires_grad(model, trainable=True)
 
-    model.encoders[0].basic_module.SingleConv1 = SingleConv(2, 16)
+    model.encoders[0].basic_module.SingleConv1 = SingleConv(params["in_channels"], 16)
 
     # Replace final sigmoid
     model.final_activation = nn.Identity()
@@ -147,13 +177,13 @@ def main_worker(args):
     # as in `DataParallel` case
     # model = torch.nn.parallel.DistributedDataParallel(model)
 
-    loss_function = WeightedBCEDiceLoss()
+    loss_function = params["loss_function"]()
 
     # optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
-    optimizer = torch.optim.Adam(params_to_update, 1e-4, weight_decay=1e-5)
+    optimizer = torch.optim.Adam(params_to_update, lr=params["lr"], weight_decay=params["weight_decay"])
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.2, patience=20
+        optimizer, mode=params["scheduler_mode"], factor=params["scheduler_factor"], patience=params["scheduler_patience"]
     )
 
     trainer = RunTraining(
@@ -168,6 +198,44 @@ def main_worker(args):
 
     # Run training/validation
     trainer.fit()
+
+    if args.withinference:
+        # Run inference pipeline
+
+        load_data_train_no_lab = pd.read_csv("data/data_test_stacked_channels.csv")
+        load_data_test = pd.read_csv("data/data_stacked_channels_training.csv")
+        load_data_test = load_data_test[load_data_test["train"] == False]
+
+        load_data = pd.concat([load_data_train_no_lab, load_data_test])
+        load_data.reset_index(inplace=True, drop=True)
+
+        model = UNet3D(
+            in_channels=params["in_channels"], out_channels=params["out_channels"], f_maps=32
+        )
+
+        try:
+            model = utils.load_weights(
+                model, 
+                weights_path="best_checkpoint.pytorch", 
+                device="cpu", # Load to CPU and convert to GPU later
+                dict_key="state_dict"
+            )
+        except:
+            model = utils.load_weights(
+                model, 
+                weights_path="../best_checkpoint.pytorch", 
+                device="cpu", # Load to CPU and convert to GPU later
+                dict_key="state_dict"
+            )
+
+        model.to("cuda")
+
+        infer = Inferer(
+            model=model, 
+            patch_size=params["patch_size"]
+            )
+
+        infer.predict_from_csv(load_data)
 
 
 if __name__ == "__main__":
