@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import shutil
 import numpy as np
+from unet.utils.loss import DiceLossAlt
 
 class RunTraining:
     """This class runs training and validation"""
@@ -17,6 +18,7 @@ class RunTraining:
         optimizer, 
         scheduler,
         num_epochs=100,
+        neptune_run=None
         ):
         self.model = model
         self.device = device
@@ -26,6 +28,7 @@ class RunTraining:
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.num_epochs = num_epochs
+        self.neptune_run = neptune_run
 
         # For early stopping (patience counter)
         self.counter = 0
@@ -49,6 +52,10 @@ class RunTraining:
             # Validate
             current_val_loss, _ = self.validate()
 
+            # if self.stop_check(current_val_loss, best_val_loss):
+            #     # If True, stop fit
+            #     break
+
             is_best = current_val_loss < best_val_loss
             print(is_best, best_val_loss, current_val_loss)
             best_val_loss = min(current_val_loss, best_val_loss)
@@ -61,20 +68,24 @@ class RunTraining:
                 "state_dict": self.model.state_dict() if not isinstance(self.model, nn.DataParallel) else self.model.module.state_dict(),
             }, is_best)
 
-            self.stop_check(current_val_loss, best_val_loss)
 
-    def stop_check(self, val_loss, best_val_loss, patience=40, delta=0.1):
+    def stop_check(self, val_loss, best_val_loss, patience=40, delta=0):
         print(f"val_loss: {val_loss}, best_val_loss: {best_val_loss}")
-        if best_val_loss + delta > val_loss:
+        if best_val_loss > (val_loss + delta):
             # Validation accuracy has improved, reset counter
             self.counter = 0
-        elif val_loss > best_val_loss + delta:
+        elif (val_loss + delta) >= best_val_loss:
             # Validation loss has not improved
             self.counter += 1
+            print(f"Counter: {self.counter}/{self.patience}")
             if self.counter >= patience:
                 print(f"Early stopping at epoch {self.epoch}. Best loss: {best_val_loss}")
-                return
-
+                return True
+        elif self.optimizer.param_groups[0]['lr'] < 1e-6:
+            print("Learning rate has reached the minimum")
+            return True
+        else:
+            return False
 
     def save_checkpoint(self, 
     state, 
@@ -130,6 +141,7 @@ class RunTraining:
         }
         train_loss = 0.0
         train_n = 0
+        dice_coef = 0.0
 
         # Set the model to training mode
         self.model.train()
@@ -156,6 +168,10 @@ class RunTraining:
                 # Since some loss functions are not weighted
                 loss = self.loss_fn(prediction, y)
 
+            # Calculate the dice coefficient for recording
+            dice_fn = DiceLossAlt()
+            dice_coef += dice_fn(prediction, y).item() * X.size(0)
+
             # Using this loss, calculate the gradients of loss for all parameters
             loss.backward()
             
@@ -178,11 +194,16 @@ class RunTraining:
 
         # self.write_epoch_stats(train_stats, "train")
         
-        epoch_loss = train_loss / train_n
+        epoch_train_loss = train_loss / train_n
+        epoch_dice_coef = dice_coef / train_n
 
-        self.writer.add_scalar(f"Train-Epoch/Loss", epoch_loss, self.epoch+1)
+        if self.neptune_run is not None:
+            self.neptune_run["train/loss"].append(epoch_train_loss)
+            self.neptune_run["train/dice_coef"].append(epoch_dice_coef)
 
-        return epoch_loss, train_stats
+        self.writer.add_scalar(f"train/loss", epoch_train_loss, self.epoch+1)
+
+        return epoch_train_loss, train_stats
     
     def validate(self):
         val_stats = {
@@ -195,6 +216,7 @@ class RunTraining:
         }
         val_loss = 0.0
         val_n = 0
+        dice_coef = 0.0
         self.model.eval()
         with torch.no_grad():
             # for i, (X, y, weight_map) in enumerate(self.data_loader["val"]):
@@ -218,6 +240,9 @@ class RunTraining:
                 val_loss += loss.item() * X.size(0)
                 val_n += X.size(0)
 
+                dice_fn = DiceLossAlt()
+                dice_coef += dice_fn(prediction, y).item() * X.size(0)
+
                 # val_stats = self.update_stats(prediction, y, val_stats)
 
         # Update stats across all training samples in epoch
@@ -225,8 +250,13 @@ class RunTraining:
 
         # self.write_epoch_stats(val_stats, "train")
 
-        val_loss = val_loss / val_n
+        epoch_val_loss = val_loss / val_n
+        epoch_dice_coef = dice_coef / val_n
 
-        self.writer.add_scalar(f"Val-Epoch/Loss", val_loss, self.epoch+1)
+        if self.neptune_run is not None:
+            self.neptune_run["val/loss"].append(epoch_val_loss)
+            self.neptune_run["val/dice_coef"].append(epoch_dice_coef)
 
-        return val_loss, val_stats
+        self.writer.add_scalar(f"val/loss", epoch_val_loss, self.epoch+1)
+
+        return epoch_val_loss, val_stats

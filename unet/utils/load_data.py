@@ -99,10 +99,9 @@ class RandomData(Dataset):
             raise NotImplementedError
 
 class MaddoxDataset(Dataset):
-    def __init__(self, data_csv, transforms, targets, train_val="train", wmap=False):
+    def __init__(self, data_csv, transforms, targets, train_val="train"):
         self.data = data_csv
         self.train_val = train_val
-        self.wmap = wmap
         self.targets = targets
         # self.targets = [["image"], ["mask"], ["weight_map"]] if self.wmap else [["image"], ["mask"]]
         self.transforms = aug.Compose(
@@ -116,12 +115,10 @@ class MaddoxDataset(Dataset):
     def __getitem__(self, idx):
         image = skimage.io.imread(self.data.iloc[idx, 0]).astype(np.float32)
         mask = skimage.io.imread(self.data.iloc[idx, 1]).astype(np.float32)
-        if self.wmap:
-            assert len(self.targets) == 3, f"Found {len(self.targets)} in targets, {self.targets} but wmap is {self.wmap}"
+        if ["weight_map"] in self.targets:
             wmap = skimage.io.imread(self.data.iloc[idx, 2]).astype(np.float32)
             sample = {"image": image, "mask": mask, "weight_map": wmap}
         else:
-            assert len(self.targets) == 2, f"Found {len(self.targets)} in targets, {self.targets} but wmap is {self.wmap}"
             sample = {"image": image, "mask": mask}
         data = self.transforms(**sample)
         return data
