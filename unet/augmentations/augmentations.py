@@ -754,8 +754,11 @@ class BlurMasks(DualTransform):
         return wmap
 
 class EdgeMaskWmap(DualTransform):
-    def __init__(self, always_apply=True):
+    def __init__(self, edge_multiplier=1, wmap_multiplier=1, invert_wmap=False, always_apply=True):
         super().__init__(always_apply=always_apply)
+        self.edge_multiplier = edge_multiplier
+        self.wmap_multiplier = wmap_multiplier
+        self.invert_wmap = invert_wmap
 
     def apply(self, image):
         return image
@@ -765,6 +768,11 @@ class EdgeMaskWmap(DualTransform):
         return mask
 
     def apply_to_wmap(self, wmap):
-        wmap = self.mask + (wmap * (self.mask != 0))
+        wmap = (self.edge_multiplier * self.mask) + (self.wmap_multiplier * wmap) 
+        # wmap[self.mask == 0] = 0
+        wmap = np.where(self.mask == 0, 0, wmap)
+        if self.invert_wmap and self.mask.max() != 0:
+            non_zero_mask = wmap != 0
+            wmap[non_zero_mask] = np.max(wmap[non_zero_mask]) - wmap[non_zero_mask] + np.min(wmap[non_zero_mask])
         # wmap = self.mask + wmap
         return wmap

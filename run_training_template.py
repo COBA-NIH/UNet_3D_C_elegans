@@ -26,6 +26,8 @@ parser.add_argument("--workers", nargs="?", default=4, type=int)
 parser.add_argument("--dummy", action="store_true")  # Use dummy data
 parser.add_argument("--withinference", action="store_true")
 
+args = parser.parse_args()
+
 params = {
     "Normalize": {"per_channel": True},
     "RandomContrastBrightness": {"p": 0.5},
@@ -51,7 +53,10 @@ params = {
     "scheduler_factor": 0.2,
     "scheduler_patience": 20,
     "scheduler_mode": "min",
-    "loss_function": WeightedBCEDiceLoss
+    # "loss_function": WeightedBCEDiceLoss,
+    "loss_function": BCEDiceLossAlt,
+    "targets": [["image"], ["mask"]]
+    # "targets": [["image"], ["mask"], ["weight_map"]]
 }
 
 train_transforms = [
@@ -64,23 +69,19 @@ train_transforms = [
     aug.RandomPoissonNoise(**params["RandomPoissonNoise"]),
     aug.ElasticDeform(**params["ElasticDeform"]),
     aug.LabelsToEdges(**params["LabelsToEdges"]),
-    aug.EdgeMaskWmap(),
+    # aug.EdgeMaskWmap(),
     # aug.BlurMasks(sigma=2),
     aug.ToTensor()
 ]
 val_transforms = [
     aug.Normalize(**params["Normalize"]),
     aug.LabelsToEdges(**params["LabelsToEdges"]),
-    aug.EdgeMaskWmap(**params["EdgeMaskWmap"]),
+    # aug.EdgeMaskWmap(**params["EdgeMaskWmap"]),
     # aug.BlurMasks(sigma=2),
     aug.ToTensor()
 ]
 
-targets=[["image"], ["mask"], ["weight_map"]]
-
 def main():
-    args = parser.parse_args()
-
     main_worker(args)
 
 def main_worker(args):
@@ -109,9 +110,9 @@ def main_worker(args):
         print(
             f"loading data from: {args.data}. Train data of length {train_dataset.shape[0]} and val data of length {val_dataset.shape[0]}"
         )
-        train_ds = MaddoxDataset(data_csv=train_dataset, transforms=train_transforms, targets=targets, train_val="train")
+        train_ds = MaddoxDataset(data_csv=train_dataset, transforms=train_transforms, targets=params["targets"], train_val="train")
 
-        val_ds = MaddoxDataset(data_csv=val_dataset, transforms=val_transforms, targets=targets, train_val="val")
+        val_ds = MaddoxDataset(data_csv=val_dataset, transforms=val_transforms, targets=params["targets"], train_val="val")
 
     if torch.cuda.is_available():
         # Find fastest conv
