@@ -2,7 +2,7 @@ import monai
 import skimage
 from unet.networks.unet3d import UNet3D
 import unet.utils.data_utils as utils
-import unet.utils.segmentation_metrics as metrics
+import unet.utils.metrics as metrics
 import torch
 import numpy as np
 import pandas as pd
@@ -61,8 +61,7 @@ class Inferer:
         """Iterate through the first column of the data inference csv"""
         # Create new columns to store prediction and segmentation paths
         inference_data_csv["prediction"] = np.nan
-        inference_data_csv["segmentation_3d_ws"] = np.nan
-        inference_data_csv["segmentation_planewise_ws"] = np.nan
+        inference_data_csv["segmentation"] = np.nan
         # Create an output folder of just the predictions and segmentations
         os.makedirs("output", exist_ok=True)
         for i, input_image_path in enumerate(inference_data_csv.iloc[:, 0]):
@@ -77,38 +76,25 @@ class Inferer:
             )  # Remove batch and channel dimensions
 
             print(f"Multicutting: {input_image_path}")
-            segmentation_3d = self.run_multicut(prediction, planewise=False)
-            segmentation_planewise = self.run_multicut(prediction, planewise=True)
+            segmentation = self.run_multicut(prediction)
 
             save_path = pathlib.Path(input_image_path)
             prediction_fn = os.path.join(
                 "./output/", f"{save_path.stem}_prediction{save_path.suffix}"
             )
-            segmentation_3d_fn = os.path.join(
-                "./output/", f"{save_path.stem}_labelled_3d_ws{save_path.suffix}"
-            )
-            segmentation_planewise_fn = os.path.join(
-                "./output/", f"{save_path.stem}_labelled_planewise_ws{save_path.suffix}"
+            segmentation_fn = os.path.join(
+                "./output/", f"{save_path.stem}_segmentation{save_path.suffix}"
             )
             # Add filenames to output csv
             inference_data_csv.loc[i, "prediction"] = prediction_fn
-            inference_data_csv.loc[i, "segmentation_3d_ws"] = segmentation_3d_fn
-            inference_data_csv.loc[
-                i, "segmentation_planewise_ws"
-            ] = segmentation_planewise_fn
+            inference_data_csv.loc[i, "segmentation"] = segmentation_fn
             # Save output
             skimage.io.imsave(
                 prediction_fn, prediction, check_contrast=False, compression=("zlib", 1)
             )
             skimage.io.imsave(
-                segmentation_3d_fn,
-                segmentation_3d,
-                check_contrast=False,
-                compression=("zlib", 1),
-            )
-            skimage.io.imsave(
-                segmentation_planewise_fn,
-                segmentation_planewise,
+                segmentation_fn,
+                segmentation,
                 check_contrast=False,
                 compression=("zlib", 1),
             )
@@ -119,88 +105,71 @@ class Inferer:
 
     def calculate_prediction_performance(self, df):
         # Select rows that have a corresponding mask
-        df = df[(~(df["masks"].isna()))].reset_index(drop=True)
+        df_masks = df[(~(df["masks"].isna()))].reset_index(drop=True)
         # Calculate IoU threshold
         iou_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
         # Dataframe to hold statistic results that will be concatenatd with df
         stats = pd.DataFrame()
-        for img_ind in range(len(df)):
-            gt_mask = skimage.io.imread(df.loc[img_ind, "masks"])
-            pred_3d_mask = skimage.io.imread(df.loc[img_ind, "segmentation_3d_ws"])
-            pred_planewise_mask = skimage.io.imread(
-                df.loc[img_ind, "segmentation_planewise_ws"]
-            )
+        for img_ind in range(len(df_masks)):
+            print(f"Calculating stats for: {df_masks.loc[img_ind, 'masks']}")
+            gt_mask = skimage.io.imread(df_masks.loc[img_ind, "masks"])
+            pred = skimage.io.imread(df_masks.loc[img_ind, "segmentation"])
             # Filter segmentation
-            pred_3d_mask = utils.filter_objects(pred_3d_mask)
-            pred_planewise_mask = utils.filter_objects(pred_planewise_mask)
+            pred = utils.filter_objects(pred)
             # Dataframe to hold IoU threshold stats
             th_stats = pd.DataFrame()
             for th in iou_thresholds:
                 # evaluate_segmentation returns a dictionary with information on F1, TP FN etc.
-                iou_3d_ws = metrics.evaluate_segmentation(
-                    gt_mask, pred_3d_mask, threshold=th
-                )
-                iou_planewise_ws = metrics.evaluate_segmentation(
-                    gt_mask, pred_planewise_mask, threshold=th
+                iou = metrics.evaluate_segmentation(
+                    gt_mask, pred, threshold=th
                 )
                 # Drop the threshold key from the dictionary
-                iou_3d_ws.pop("threshold", None)
-                iou_planewise_ws.pop("threshold", None)
+                iou.pop("threshold", None)
                 # Convert the dictionary to a DataFrame, rename columns with relevant information
-                iou_3d_ws = pd.DataFrame(
-                    {k + f"_threshold_{th}_3d_ws": v for k, v in iou_3d_ws.items()},
-                    index=[0],
-                )
-                iou_planewise_ws = pd.DataFrame(
-                    {
-                        k + f"_threshold_{th}_planewise_ws": v
-                        for k, v in iou_planewise_ws.items()
-                    },
+                iou = pd.DataFrame(
+                    {k + f"_threshold_{th}": v for k, v in iou.items()},
                     index=[0],
                 )
                 if self.neptune_run is not None:
-                    self.neptune_run[f"evaluation/f1_th_{th}_3d_ws"] = iou_3d_ws[
-                        f"f1_threshold_{th}_3d_ws"
-                    ].values
-                    self.neptune_run[f"evaluation/f1_th_{th}_planewise_ws"] = iou_planewise_ws[
-                        f"f1_threshold_{th}_planewise_ws"
+                    self.neptune_run[f"evaluation/f1_th_{th}"] = iou[
+                        f"f1_threshold_{th}"
                     ].values
                 # Concatenate the columns from different stats so they're in the same row
-                th_stats = pd.concat([th_stats, iou_3d_ws, iou_planewise_ws], axis=1)
-            # Append row
+                th_stats = pd.concat([th_stats, iou], axis=1)
+
+            # Calculate adapted_rand_error for each image
+            rand_error = metrics.calculate_rand_error(pred, gt_mask)[0]
+            th_stats["rand_error"] = rand_error
+            if self.neptune_run is not None:
+                self.neptune_run[f"evaluation/rand_error"] = rand_error
+            # Append row, th_stats, containing iou and rand error
             stats = pd.concat([stats, th_stats], axis=0)
-        # Calculate adapted_rand_error
         # Concatenate the stats columns onto the output df
-        df = pd.concat([df, stats], axis=1)
+        df_masks = pd.concat([df_masks, stats], axis=1)
+
+        # Append pred + mask rows with non-GT containing rows
+        df = pd.concat([df_masks, df[((df["masks"].isna()))].reset_index(drop=True)])
 
         if self.neptune_run is not None:
             self.neptune_run["evaluation/predictions"].upload(File.as_html(df))
 
+
         return df
 
-    def run_multicut(self, prediction, planewise=False):
+    def run_multicut(self, prediction):
         """Performs multicut segmentation on a border prediction"""
-        if planewise:
-            ws_kwargs = dict(
-                threshold=0.5,
-                sigma_seeds=2.0,
-                #  sigma_weights=sigma_weights,
-                min_size=15,
-                #  pixel_pitch=pixel_pitch,
-                #  apply_nonmax_suppression=apply_nonmax_suppression,
-                #  mask=mask
-            )
-            ws, _ = stacked_watershed(
-                prediction, ws_function=distance_transform_watershed, **ws_kwargs
-            )
-        else:
-            ws, _ = distance_transform_watershed(
-                prediction,
-                threshold=0.5,
-                sigma_seeds=2.0,
-                min_size=15,
-                # sigma_weights=2.0
-            )
+        ws_kwargs = dict(
+            threshold=0.5,
+            sigma_seeds=2.0,
+            #  sigma_weights=sigma_weights,
+            min_size=15,
+            #  pixel_pitch=pixel_pitch,
+            #  apply_nonmax_suppression=apply_nonmax_suppression,
+            #  mask=mask
+        )
+        ws, _ = stacked_watershed(
+            prediction, ws_function=distance_transform_watershed, **ws_kwargs
+        )
 
         rag = compute_rag(ws)
 
