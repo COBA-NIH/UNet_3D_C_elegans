@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import shutil
 import numpy as np
-from unet.utils.loss import DiceLossAlt
+import unet.utils.metrics as metrics
 
 class RunTraining:
     """This class runs training and validation"""
@@ -35,22 +35,16 @@ class RunTraining:
 
         self.writer = SummaryWriter("training_logs")
 
-    def dice_coef(self, y_true, y_pred):
-        intersection = np.sum((y_true+y_pred == 2))
-        union = np.sum(y_true) + np.sum(y_pred)
-        dice = (2 * intersection) / (union + 1e-6)
-        return dice
-
     def fit(self):
         best_val_loss = np.inf
         for epoch in tqdm(range(self.num_epochs)):
             self.epoch = epoch
 
             # Train
-            _, _ = self.train()
+            _ = self.train()
 
             # Validate
-            current_val_loss, _ = self.validate()
+            current_val_loss = self.validate()
 
             # if self.stop_check(current_val_loss, best_val_loss):
             #     # If True, stop fit
@@ -112,7 +106,7 @@ class RunTraining:
         accuracy = sklearn.metrics.accuracy_score(target, th_prediction)
         f1 = sklearn.metrics.f1_score(target, th_prediction)
         jaccard = sklearn.metrics.jaccard_score(target, th_prediction)
-        dice_coef = self.dice_coef(target, th_prediction)
+        dice_coef = metrics.dice_coef(target, th_prediction)
 
         stat_dict["precision"] += precision
         stat_dict["recall"] += recall
@@ -122,33 +116,18 @@ class RunTraining:
 
         return stat_dict
 
-    def write_epoch_stats(self, stat_dict, train_or_val):
-        self.writer.add_scalar(f"{train_or_val}/Accuracy", stat_dict["accuracy"], self.epoch+1)
-        self.writer.add_scalar(f"{train_or_val}/Precision", stat_dict["precision"], self.epoch+1)
-        self.writer.add_scalar(f"{train_or_val}/Recall", stat_dict["recall"], self.epoch+1)
-        self.writer.add_scalar(f"{train_or_val}/F1", stat_dict["f1"], self.epoch+1)
-        self.writer.add_scalar(f"{train_or_val}/jaccard", stat_dict["jaccard"], self.epoch+1)
-        self.writer.add_scalar(f"{train_or_val}/dice_coef", stat_dict["dice_coef"], self.epoch+1)
 
     def train(self):
-        train_stats = {
-            "precision": 0.0,
-            "recall": 0.0,
-            "accuracy": 0.0,
-            "f1": 0.0,
-            "jaccard": 0.0,
-            "dice_coef": 0.0
-        }
         train_loss = 0.0
         train_n = 0
         dice_coef = 0.0
+        rand_error = 0.0
 
         # Set the model to training mode
         self.model.train()
 
         for i, data in enumerate(self.data_loader["train"]):
             X, y = data["image"].to(self.device), data["mask"].to(self.device)
-            
             # Check if there is a weight map
             try:
                 weight_map = data["weight_map"].to(self.device)
@@ -168,15 +147,8 @@ class RunTraining:
                 # Since some loss functions are not weighted
                 loss = self.loss_fn(prediction, y)
 
-            # Calculate the dice coefficient for recording
-            dice_fn = DiceLossAlt()
-            dice_coef += dice_fn(prediction, y).item() * X.size(0)
-
             # Using this loss, calculate the gradients of loss for all parameters
             loss.backward()
-            
-            # Update the the parameters of the model
-            self.optimizer.step()
 
             # Gather the loss
             # X.size(0) is just the batch size
@@ -187,40 +159,37 @@ class RunTraining:
             # Used for calculating average metrics later
             train_n += X.size(0)
 
-            # train_stats = self.update_stats(prediction, y, train_stats)
+            # Calculate the dice coefficient for recording
+            dice_coef += metrics.dice_coef(prediction.sigmoid(), y) * X.size(0)
+            # calculate_rand_error returns an array, with each element the rand error at a given threshold
+            # The default is 0.4
+            rand_error += metrics.calculate_rand_error(prediction.sigmoid(), y)[0] * X.size(0)
 
-        # Update stats across all training samples in epoch
-        # train_stats = {k: v / train_n for k, v in train_stats.items()}
+            # Update the the parameters of the model
+            self.optimizer.step()
 
-        # self.write_epoch_stats(train_stats, "train")
+
         
         epoch_train_loss = train_loss / train_n
         epoch_dice_coef = dice_coef / train_n
+        epoch_rand_error = rand_error / train_n
 
         if self.neptune_run is not None:
             self.neptune_run["train/loss"].append(epoch_train_loss)
             self.neptune_run["train/dice_coef"].append(epoch_dice_coef)
+            self.neptune_run["train/rand_error"].append(epoch_rand_error)
 
         self.writer.add_scalar(f"train/loss", epoch_train_loss, self.epoch+1)
 
-        return epoch_train_loss, train_stats
+        return epoch_train_loss
     
     def validate(self):
-        val_stats = {
-            "precision": 0.0,
-            "recall": 0.0,
-            "accuracy": 0.0,
-            "f1": 0.0,
-            "jaccard": 0.0,
-            "dice_coef": 0.0
-        }
         val_loss = 0.0
         val_n = 0
         dice_coef = 0.0
+        rand_error = 0.0
         self.model.eval()
         with torch.no_grad():
-            # for i, (X, y, weight_map) in enumerate(self.data_loader["val"]):
-                # X, y, weight_map = X.to(self.device), y.to(self.device), weight_map.to(self.device)
             for i, data in enumerate(self.data_loader["val"]):
                 X, y = data["image"].to(self.device), data["mask"].to(self.device)
                 
@@ -240,23 +209,18 @@ class RunTraining:
                 val_loss += loss.item() * X.size(0)
                 val_n += X.size(0)
 
-                dice_fn = DiceLossAlt()
-                dice_coef += dice_fn(prediction, y).item() * X.size(0)
-
-                # val_stats = self.update_stats(prediction, y, val_stats)
-
-        # Update stats across all training samples in epoch
-        # val_stats = {k: v / val_n for k, v in val_stats.items()}
-
-        # self.write_epoch_stats(val_stats, "train")
+                dice_coef += metrics.dice_coef(prediction.sigmoid(), y) * X.size(0)
+                rand_error += metrics.calculate_rand_error(prediction.sigmoid(), y)[0] * X.size(0)
 
         epoch_val_loss = val_loss / val_n
         epoch_dice_coef = dice_coef / val_n
+        epoch_rand_error = rand_error / val_n
 
         if self.neptune_run is not None:
             self.neptune_run["val/loss"].append(epoch_val_loss)
             self.neptune_run["val/dice_coef"].append(epoch_dice_coef)
+            self.neptune_run["val/rand_error"].append(epoch_rand_error)
 
         self.writer.add_scalar(f"val/loss", epoch_val_loss, self.epoch+1)
 
-        return epoch_val_loss, val_stats
+        return epoch_val_loss
