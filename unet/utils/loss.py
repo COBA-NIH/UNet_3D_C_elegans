@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch
 import numpy as np
+from unet.utils.metrics import dice_coef
 
 # def dice_loss(input, target, epsilon=1e-6):
 #     assert input.shape == target.shape, "Input must be same shape as target"
@@ -16,72 +17,22 @@ import numpy as np
 #     return 2 * (intersect / denominator.clamp(min=epsilon))
 
 
-
 class DiceLoss(nn.Module):
-    def __init__(self, channel_dim=0):
-        super().__init__()
-        self.channel_dim = channel_dim
-
-    def dice_loss(self, prediction, target):
-        # Make arrays 1D
-        prediction = prediction.flatten()
-        target = target.flatten()
-        target = target.float()
-
-        intersection = (prediction * target).sum(-1)
-
-        loss = 1 - 2 * (intersection) / (prediction.sum() + target.sum())
-        return loss
-    
-    def forward(self, prediction, target):
-        prediction = nn.Sigmoid()(prediction)
-
-        dice = self.dice_loss(prediction, target)
-
-        return dice
-
-class DiceLossAlt(nn.Module):
     def __init__(self):
         super().__init__()
-
-    def dice_loss(self, prediction, target):
-        epsilon = 1e-6
-
-        # Make arrays 1D
-        prediction = prediction.flatten()
-        target = target.flatten()
-        target = target.float()
-
-        intersection = (prediction * target).sum()
-
-        loss = 2 * (intersection / ((prediction ** 2).sum() + (target ** 2).sum()).clamp(min=epsilon))
-
-        return (1. - loss).mean()
     
     def forward(self, prediction, target):
         prediction = nn.Sigmoid()(prediction)
 
-        dice = self.dice_loss(prediction, target)
-
-        return dice
-
+        dice = dice_coef(prediction, target)
+        print(f"dice_coef: {dice}")
+        return 1. - dice
 
 class BCEDiceLoss(nn.Module):
     def __init__(self):
         super().__init__()
         self.bce = nn.BCEWithLogitsLoss()
         self.dice = DiceLoss()
-
-    def forward(self, prediction, target):
-        output = self.bce(prediction, target.float()) + self.dice(prediction, target)
-
-        return output
-
-class BCEDiceLossAlt(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.bce = nn.BCEWithLogitsLoss()
-        self.dice = DiceLossAlt()
 
     def forward(self, prediction, target):
         output = self.bce(prediction, target.float()) + self.dice(prediction, target)
@@ -145,8 +96,8 @@ class WeightedDiceLoss(nn.Module):
         weight_map = weight_map.flatten().float()
 
         intersection = (prediction * target * weight_map).sum()
-        loss = 2 * (intersection / ((prediction ** 2).sum() + (target ** 2).sum()).clamp(min=1e-6))
-        return (1. - loss).mean()
+        dice_coef = 2 * (intersection / ((prediction ** 2).sum() + (target ** 2).sum()).clamp(min=1e-6))
+        return 1. - dice_coef
 
 class WeightedBCEDiceLoss(nn.Module):
     """Pixel weighted BCE + Dice Loss"""
@@ -159,22 +110,3 @@ class WeightedBCEDiceLoss(nn.Module):
     def forward(self, prediction, target, weight_map=None):
         loss = self.bce(prediction, target, weight_map) + self.dice(prediction, target, weight_map)
         return loss
-
-
-def soft_dice_loss(outputs, targets, per_image=False, per_channel=False):
-    batch_size, n_channels = outputs.size(0), outputs.size(1)
-    
-    eps = 1e-6
-    n_parts = 1
-    if per_image:
-        n_parts = batch_size
-    if per_channel:
-        n_parts = batch_size * n_channels
-    
-    dice_target = targets.contiguous().view(n_parts, -1).float()
-    dice_output = outputs.contiguous().view(n_parts, -1)
-    intersection = torch.sum(dice_output * dice_target, dim=1)
-    union = torch.sum(dice_output, dim=1) + torch.sum(dice_target, dim=1) + eps
-    loss = (1 - (2 * intersection + eps) / union).mean()
-    return loss
-
