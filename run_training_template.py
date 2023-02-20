@@ -9,12 +9,15 @@ from unet.networks.unet3d import UNet3D
 from unet.networks.unet3d import SingleConv
 # from unet.networks.unet3d import UnetModel
 import unet.augmentations.augmentations as aug
-from unet.utils.loss import WeightedBCELoss, WeightedBCEDiceLoss, BCEDiceLoss, BCEDiceLossAlt
+from unet.utils.loss import WeightedBCELoss, WeightedBCEDiceLoss, BCEDiceLoss
 from unet.utils.trainer import RunTraining
 from unet.utils.inferer import Inferer
 import argparse
 import unet.utils.data_utils as utils
 
+import neptune.new as neptune
+
+neptune_run = None
 
 parser = argparse.ArgumentParser(description="3DUnet Training")
 
@@ -37,27 +40,29 @@ params = {
     "RandomGaussianNoise": {"p": 0.5},
     "RandomPoissonNoise": {"p": 0.5},
     "ElasticDeform": {"sigma":10, "p":0.5, "channel_axis": 0, "mode":"mirror"},
-    "LabelsToEdges": {"connectivity":2},
-    "EdgeMaskWmap": {},
-    # "BlurMasks": {"sigma": 2}
+    "LabelsToEdges": {"connectivity": 2, "mode":"thick"},
+    "EdgeMaskWmap": {"edge_multiplier":2, "wmap_multiplier":1, "invert_wmap":True},
+    # "BlurMasks": {"sigma": 2},
     "ToTensor": {},
     "batch_size": args.batch,
     "epochs": args.epochs,
     "val_split": 0.2,
     "patch_size": (24, 200, 200),
-    "create_wmap": True,
-    "lr": 1e-4,
+    "create_wmap": True, ##
+    "lr": 1e-2,
     "weight_decay": 1e-5,
     "in_channels": 2,
     "out_channels": 1,
     "scheduler_factor": 0.2,
     "scheduler_patience": 20,
     "scheduler_mode": "min",
-    # "loss_function": WeightedBCEDiceLoss,
-    "loss_function": BCEDiceLossAlt,
-    "targets": [["image"], ["mask"]]
-    # "targets": [["image"], ["mask"], ["weight_map"]]
+    "loss_function": WeightedBCEDiceLoss,
+    # "loss_function": BCEDiceLoss,
+    # "targets": [["image"], ["mask"]]
+    "targets": [["image"], ["mask"], ["weight_map"]]
 }
+
+neptune_run["parameters"] = params
 
 train_transforms = [
     aug.Normalize(**params["Normalize"]),
@@ -69,15 +74,15 @@ train_transforms = [
     aug.RandomPoissonNoise(**params["RandomPoissonNoise"]),
     aug.ElasticDeform(**params["ElasticDeform"]),
     aug.LabelsToEdges(**params["LabelsToEdges"]),
-    # aug.EdgeMaskWmap(),
-    # aug.BlurMasks(sigma=2),
+    aug.EdgeMaskWmap(**params["EdgeMaskWmap"]),
+    # aug.BlurMasks(**params["BlurMasks"]),
     aug.ToTensor()
 ]
 val_transforms = [
     aug.Normalize(**params["Normalize"]),
     aug.LabelsToEdges(**params["LabelsToEdges"]),
-    # aug.EdgeMaskWmap(**params["EdgeMaskWmap"]),
-    # aug.BlurMasks(sigma=2),
+    aug.EdgeMaskWmap(**params["EdgeMaskWmap"]),
+    # aug.BlurMasks(**params["BlurMasks"]),
     aug.ToTensor()
 ]
 
@@ -151,6 +156,14 @@ def main_worker(args):
     #     dict_key="model_state_dict"
     # )
 
+
+    model = utils.load_weights(
+        model, 
+        weights_path="../3DUnet_lightsheet_boundary_best_checkpoint.pytorch", 
+        device="cpu", # Load to CPU and convert to GPU later
+        dict_key="model_state_dict"
+    )
+
     model = utils.set_parameter_requires_grad(model, trainable=True)
 
     model.encoders[0].basic_module.SingleConv1 = SingleConv(params["in_channels"], 16)
@@ -195,6 +208,7 @@ def main_worker(args):
         optimizer,
         scheduler,
         num_epochs=args.epochs,
+        neptune_run=neptune_run
     )
 
     # Run training/validation
@@ -233,11 +247,13 @@ def main_worker(args):
 
         infer = Inferer(
             model=model, 
-            patch_size=params["patch_size"]
+            patch_size=params["patch_size"],
+            neptune_run=neptune_run
             )
 
         infer.predict_from_csv(load_data)
 
+    neptune_run.stop()
 
 if __name__ == "__main__":
     main()
