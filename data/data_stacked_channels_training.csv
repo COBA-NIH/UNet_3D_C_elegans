@@ -1,0 +1,4 @@
+images,masks,train
+./data/images_stacked_channels/mx85-nd-acqusition-0-stacked-channels.tif,./data/masks/mx85-nd-acqusition-0-ground-truth.tif,TRUE
+./data/images_stacked_channels/mx85-nd-acqusition-1-stacked-channels.tif,./data/masks/mx85-nd-acqusition-1-ground-truth.tif,TRUE
+./data/images_stacked_channels/mx85-nd-acqusition-8-stacked-channels.tif,./data/masks/mx85-nd-acqusition-8-ground-truth.tif,FALSE
