@@ -98,7 +98,7 @@ class RandomData(Dataset):
         else:
             raise NotImplementedError
 
-class MaddoxDataset(Dataset):
+class CElegansDataset(Dataset):
     def __init__(self, data_csv, transforms, targets, train_val="train"):
         self.data = data_csv
         self.train_val = train_val

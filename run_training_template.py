@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import pandas as pd
 import sklearn.model_selection
-from unet.utils.load_data import MaddoxDataset, RandomData
+from unet.utils.load_data import CElegansDataset, RandomData
 from unet.networks.unet3d import UNet3D
 from unet.networks.unet3d import SingleConv
 # from unet.networks.unet3d import UnetModel
@@ -115,9 +115,9 @@ def main_worker(args):
         print(
             f"loading data from: {args.data}. Train data of length {train_dataset.shape[0]} and val data of length {val_dataset.shape[0]}"
         )
-        train_ds = MaddoxDataset(data_csv=train_dataset, transforms=train_transforms, targets=params["targets"], train_val="train")
+        train_ds = CElegansDataset(data_csv=train_dataset, transforms=train_transforms, targets=params["targets"], train_val="train")
 
-        val_ds = MaddoxDataset(data_csv=val_dataset, transforms=val_transforms, targets=params["targets"], train_val="val")
+        val_ds = CElegansDataset(data_csv=val_dataset, transforms=val_transforms, targets=params["targets"], train_val="val")
 
     if torch.cuda.is_available():
         # Find fastest conv
@@ -207,7 +207,7 @@ def main_worker(args):
         loss_function,
         optimizer,
         scheduler,
-        num_epochs=args.epochs,
+        num_epochs=params["epochs"],
         neptune_run=neptune_run
     )
 
