@@ -205,7 +205,7 @@ For full example usage, see the [example notebook](./notebooks/example_usage.ipy
 
 ## Current limitations
 
-While prediction of the smaller cells, of which there are 200-300, is good, the edge prediction for the larger cells is more unstable. Some images possess a great signal to background ratio at the edges of large cells, which improve edge prediction, whereas other images have a poor edge signal in these areas.
+Visual inspection reveals that the prediction of the smaller cells is good, but the edge prediction for the larger cells is more unstable. Some images possess a great signal to background ratio at the edges of large cells, which improves edge prediction, whereas other images have a poor edge signal in these areas.
 
 This can be viewed as a training data imbalance problem, as there is an abundance of small cells with distinct membrane signal, but for the larger cells the strong edge signal is only present on edges between cells and not on the edge of the large cell proximal to the background. 
 
