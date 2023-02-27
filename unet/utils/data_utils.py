@@ -318,8 +318,10 @@ def create_patch_dataset(load_data_csv, patch_size, filter_patches=False, create
         image = skimage.io.imread(load_data_csv.iloc[i, 0])
         mask = skimage.io.imread(load_data_csv.iloc[i, 1])
         mask = make_sequential(mask)
-        mask = np.expand_dims(mask, 0) # Patching requires (C, spatial)
+        if mask.ndim == 3:
+            mask = np.expand_dims(mask, 0) # Patching requires (C, spatial)
         weight_map = mask.copy() # Will calculate actual weight map later
+        print(image.shape, mask.shape, weight_map.shape)
         if create_wmap:
             # weight_map = calculate_binary_weight_map(mask, w0=w0, sigma=sigma)
             for ind, (img, msk, wmp) in enumerate(zip(patch_iter(image), patch_iter(mask), patch_iter(weight_map))):

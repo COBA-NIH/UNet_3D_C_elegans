@@ -99,15 +99,18 @@ class RandomData(Dataset):
             raise NotImplementedError
 
 class CElegansDataset(Dataset):
-    def __init__(self, data_csv, transforms, targets, train_val="train"):
+    def __init__(self, data_csv, targets, transforms=None, train_val="train"):
         self.data = data_csv
         self.train_val = train_val
         self.targets = targets
         # self.targets = [["image"], ["mask"], ["weight_map"]] if self.wmap else [["image"], ["mask"]]
-        self.transforms = aug.Compose(
+        if transforms is not None:
+            self.transforms = aug.Compose(
                     transforms,
                     targets=self.targets
                 )
+        else:
+            self.transforms = None
 
     def __len__(self):
         return len(self.data)
@@ -120,9 +123,12 @@ class CElegansDataset(Dataset):
             sample = {"image": image, "mask": mask, "weight_map": wmap}
         else:
             sample = {"image": image, "mask": mask}
-        data = self.transforms(**sample)
-        return data
-
+        if self.transforms is not None:
+            data = self.transforms(**sample)
+            return data
+        else:
+            return sample
+        
 
 def make_consecutive(array):
     """Make a non-contiguous label matrix contiguous"""
