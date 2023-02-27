@@ -5,6 +5,7 @@ import random
 import scipy
 import elasticdeform
 from collections.abc import Iterable
+from . import aug_functional as F
 
 
 class Compose:
@@ -93,7 +94,8 @@ class DualTransform(Transform):
             params = self.get_params(**data)
             # self.paired == True means that image and mask
             # will have the same transforms applied equally
-            if self.paired and ["weight_map"] not in targets:
+            if self.paired and (["weight_map"] not in targets):
+                print(targets)
                 image, mask = self.apply(**data)
                 # Add paired transforms back into the expected
                 # dictionary keys
@@ -161,14 +163,6 @@ class Contiguous(DualTransform):
         return np.ascontiguousarray(image)
 
 
-def resize(img, new_shape, interpolation=1):
-
-    new_img = skimage.transform.resize(
-        img, new_shape, order=interpolation, anti_aliasing=False
-    )
-    return new_img
-
-
 class Resize(DualTransform):
     """Class to handle passing of data to resize function"""
 
@@ -221,47 +215,12 @@ class LabelsToEdgesAndCentroids(DualTransform):
         return image
 
     def apply_to_mask(self, mask):
-        return labels_to_edges_and_centroids(
+        return F.labels_to_edges_and_centroids(
             mask, self.mode, self.connectivity, self.blur, self.centroid_pad
         )
 
     def apply_to_wmap(self, wmap):
         return wmap
-
-
-def labels_to_edges_and_centroids(labels, connectivity, blur, centroid_pad):
-    """For a given instance labelmap, convert the labels to edges and centroids.
-    Blur the edges if you'd like.
-
-    Centroids are rounded to the nearest pixel
-
-    Returns a two channel image with shape (C, Z, H, W).
-
-    Edges are ch0 and centers are ch1"""
-    labels = labels.astype(int)
-    regions = skimage.measure.regionprops(labels)
-    if len(regions) > 0:
-        cell_edges = skimage.segmentation.find_boundaries(labels, connectivity)
-        cell_edges = skimage.filters.gaussian(cell_edges, sigma=blur)
-        centers = np.zeros_like(labels)
-        for lab in regions:
-            x, y, z = lab.centroid
-            x, y, z = round(x), round(y), round(z)
-            centers[
-                x - centroid_pad : x + centroid_pad,
-                y - centroid_pad : y + centroid_pad,
-                z - centroid_pad : z + centroid_pad,
-            ] = 1
-        output = [cell_edges, centers]
-    else:
-        # GT is blank
-        output = [labels, labels]
-
-    # Add background as a class
-    background = np.zeros_like(labels)
-    background[labels == 0] = 1
-    output.insert(0, background)
-    return np.stack(output, axis=0)
 
 
 class ToTensor(DualTransform):
@@ -273,23 +232,7 @@ class ToTensor(DualTransform):
 
     def apply(self, image):
         """The image is not changed"""
-        return convert_to_tensor(image)
-
-
-def convert_to_tensor(input_array):
-    assert input_array.ndim in [3, 4], "Image must be 3D (D, H, W) or 4D (C, D, H, W)"
-    if input_array.ndim == 3:
-        # Add channel axis
-        input_array = np.expand_dims(input_array, axis=0)
-    return torch.from_numpy(input_array.astype(np.float32))
-    #     tensor = torch.from_numpy(input_array).double()
-    # return tensor
-
-
-def gaussian_blur(input_array, sigma_range=[0.1, 2.0]):
-    sigma = random.uniform(sigma_range[0], sigma_range[1])
-    input_array = scipy.ndimage.gaussian_filter(input_array, sigma)
-    return input_array
+        return F.convert_to_tensor(image)
 
 
 class RandomGuassianBlur(DualTransform):
@@ -301,7 +244,7 @@ class RandomGuassianBlur(DualTransform):
         self.sigma_range = sigma_range
 
     def apply(self, image):
-        return gaussian_blur(image, self.sigma_range)
+        return F.gaussian_blur(image, self.sigma_range)
 
     def apply_to_mask(self, mask):
         return mask
@@ -309,11 +252,6 @@ class RandomGuassianBlur(DualTransform):
     def apply_to_wmap(self, wmap):
         return wmap
 
-
-def random_gaussian_noise(input_array, scale=[0, 1]):
-    std = np.random.uniform(scale[0], scale[1])
-    noise = np.random.normal(0, std, input_array.shape)
-    return input_array + noise
 
 
 class RandomGaussianNoise(DualTransform):
@@ -325,7 +263,7 @@ class RandomGaussianNoise(DualTransform):
         self.scale = scale
 
     def apply(self, image):
-        return random_gaussian_noise(image, self.scale)
+        return F.random_gaussian_noise(image, self.scale)
 
     def apply_to_mask(self, mask):
         return mask
@@ -351,23 +289,6 @@ class RandomPoissonNoise(DualTransform):
         return wmap
 
 
-def normalize_img(image, per_channel=False):
-    # mean, std = image.mean(), image.std()
-    # norm_image = (image - mean) / std
-    # return norm_image
-
-    if per_channel:
-        # Get the axes to compute mean for
-        axes = tuple(list(range(image.ndim)))[1:]
-        mean = np.mean(image, axis=axes, keepdims=True)
-        std = np.std(image, axis=axes, keepdims=True)
-    else:
-        mean = np.mean(image)
-        std = np.std(image)
-
-    return (image - mean) / np.clip(std, a_min=1e-10, a_max=None)
-
-
 class Normalize(DualTransform):
     """Z-score normalization.
     Normalizes the input image so that the mean is 0 and std is 1.
@@ -378,7 +299,7 @@ class Normalize(DualTransform):
         self.per_channel = per_channel
 
     def apply(self, image):
-        return normalize_img(image, self.per_channel)
+        return F.normalize_img(image, self.per_channel)
 
     def apply_to_mask(self, mask):
         return mask
@@ -387,22 +308,12 @@ class Normalize(DualTransform):
         return wmap
 
 
-def random_brightness_contrast(
-    input_array, alpha=1.0, beta=0.0, contrast_limit=0.2, brightness_limit=0.2
-):
-    alpha = alpha + np.random.uniform(-contrast_limit, contrast_limit)
-    beta = beta + np.random.uniform(-brightness_limit, brightness_limit)
-    input_array *= alpha
-    input_array += beta * input_array.mean()
-    return input_array
-
-
 class RandomContrastBrightness(DualTransform):
     def __init__(self, alpha=1, beta=0, p=1):
         super().__init__(p=p)
 
     def apply(self, image):
-        return random_brightness_contrast(image)
+        return F.random_brightness_contrast(image)
 
     def apply_to_mask(self, mask):
         return mask
@@ -508,19 +419,12 @@ class RandomRot90(DualTransform):
         return {"rotations": np.random.randint(0, 4)}
 
     def apply(self, image, rotations):
-        if isinstance(image, list):
-            for i, ch_img in enumerate(image):
-                image[i] = np.rot90(ch_img, rotations, axes=self.axis)
-            return image
-        else:
-            return np.rot90(image, rotations, axes=self.axis)
+        return np.rot90(image, rotations, axes=self.axis)
 
     def apply_to_mask(self, mask, rotations):
         return np.rot90(mask, rotations, axes=self.axis)
 
     def apply_to_wmap(self, wmap, rotations):
-        """One-hot encoded has shape (channels, spatial), so we rotate on
-        axes 2, 3"""
         return np.rot90(wmap, rotations, axes=self.axis)
 
 
@@ -530,7 +434,7 @@ class ElasticDeform(DualTransform):
         sigma=25,
         points=3,
         mode="mirror",
-        axis=(1, 2),
+        axis=(2, 3),
         p=1.0,
         channel_axis=None,
     ):
@@ -543,31 +447,33 @@ class ElasticDeform(DualTransform):
         self.channel_axis = channel_axis
 
     def apply(self, image, mask, weight_map=None):
-        """Convert 4D (multiple channel) input images or wmap
-        into a flattened list of 3D arrays for elasticdeform"""
-        # Detect how many channels
-        if mask.ndim == 4:
-            # Channel dim is added if using patch data loader
-            mask = mask[0] # [0] to remove channel index
-        if self.channel_axis is not None:
-            num_channels = image.shape[self.channel_axis]
-            # Flatten into a list
-            data = [image[i, ...] for i in range(num_channels)]
-            data.append(mask) 
-        else:
-            data = [image, mask]
-            num_channels = 1
+        """
+        deform_random_grid will perform paired augmentations
+        to all arrays within a list. Multichannel arrays
+        must be split into single channels and passed, so that
+        all input to deform_random_grid is the same
+        
+        
+        pseucode:
+        convert arrays to ch, z, x, y
 
+        """
+        assert image.ndim == 4, "Input image should be shape (C, spatial)"
+        assert mask.ndim == 4, "Input mask should be shape (C, spatial)"
         if weight_map is not None:
-            # n_classes = weight_map.shape[0]
-            # weight_maps = [weight_map[i, ...] for i in range(n_classes)]
-            if weight_map.ndim == 4:
-                weight_map = weight_map[0,...]
-            data.append(weight_map)
+            assert weight_map.ndim == 4, "Input weight map should be shape (C, spatial)"
+            num_channels = [arr.shape[0] for arr in [image, mask, weight_map]]
+            split_arrays = [np.split(arr, arr.shape[0], axis=0) for arr in [image, mask, weight_map]]
+        else:
+            num_channels = [arr.shape[0] for arr in [image, mask]]
+            split_arrays = [np.split(arr, arr.shape[0], axis=0) for arr in [image, mask]]
+    
+        # Flatten list to list of arrays
+        data = [arr for split_arr in split_arrays for arr in split_arr]
 
         # Iterpolate only the raw image pixels
         interpolate_order = np.zeros(len(data), dtype=int)
-        interpolate_order[0:num_channels] = 1
+        interpolate_order[0:num_channels[0]] = 1
         interpolate_order = list(interpolate_order)
         # Perform elasticdeformation
         data = elasticdeform.deform_random_grid(
@@ -579,56 +485,13 @@ class ElasticDeform(DualTransform):
             mode=self.mode,
         )
 
-        # Use slices to stack output raw image back into
-        # a multichannel image, if applicable
-        image = np.stack(data[0:num_channels], axis=0)
-
+        image = np.concatenate(data[0:num_channels[0]], axis=0)
+        mask = np.concatenate(data[num_channels[0]:sum(num_channels[0:2])], axis=0)
         if weight_map is not None:
-            weight_map = np.stack(data[num_channels+1:], axis=0)
-            return image, data[num_channels], weight_map
+            weight_map = np.concatenate(data[sum(num_channels[0:2]):sum(num_channels[0:3])], axis=0)
+            return image, mask, weight_map
         else:
-            return image, data[num_channels]  # [num_channels] is the mask index
-
-
-def edges_and_centroids(
-    labels,
-    connectivity=1,
-    mode="inner",
-    return_initial_border=True,
-    iterations=1,
-    one_hot=True,
-):
-    """Calculate the border around objects and then subtract this border from
-    the object, reducing the object size"""
-    assert iterations > 0, "Iterations must be greater than 0"
-    centroids = labels.copy().astype(int)
-    for i in range(iterations):
-        # Calculate the edges. We use centroids since we will erode them over iterations
-        edges = skimage.segmentation.find_boundaries(
-            centroids, connectivity=connectivity, mode=mode
-        )
-        # If a pixel was determined to be a boundary of an object, remove it
-        centroids[edges > 0.5] = 0
-        # Make labels binary
-        centroids[centroids > 0.5] = 1
-    if return_initial_border:
-        edges = skimage.segmentation.find_boundaries(
-            labels, connectivity=connectivity, mode=mode
-        )
-
-    if one_hot:
-        output = [edges, centroids]
-        background = np.zeros_like(labels)
-        # Background is where there is no foreground
-        background[labels == 0] = 1
-        # Make background the 0th index
-        output.insert(0, background)
-        return np.stack(output, axis=0)
-    else:
-        # Bump centroid label up to 2
-        centroids[centroids == 1] = 2
-        output = np.stack([edges, centroids], axis=0)
-        return np.max(output, axis=0)
+            return image, mask
 
 
 class EdgesAndCentroids(DualTransform):
@@ -643,7 +506,7 @@ class EdgesAndCentroids(DualTransform):
         return image
 
     def apply_to_mask(self, mask):
-        return edges_and_centroids(
+        return F.edges_and_centroids(
             mask,
             mode=self.mode,
             connectivity=self.connectivity,
@@ -652,47 +515,6 @@ class EdgesAndCentroids(DualTransform):
 
     def apply_to_wmap(self, wmap):
         return wmap
-
-def edges_and_centroids2(
-    labels,
-    mode,
-    connectivity=1,
-    dilation=1,
-    one_hot=True
-    ):
-    """Centroids are calculated using skimage regionprops and then 
-    dilated. Gives a more uniform centroid shape, independent of GT size"""
-    """Calculate the border around objects and then subtract this border from
-    the object, reducing the object size"""
-    label_properties = skimage.measure.regionprops(labels.astype(int))
-    # Gather centroids
-    centroids = [prop.centroid for prop in label_properties]
-    # Round centroids
-    centroids = np.round(centroids).astype(int)
-    # Create a image to add the centroids to
-    centroid_image = np.zeros_like(labels)
-    # Add centroids 
-    # .T transpose will make the centroid array have shape
-    # (dimension, num_centroids) ie. for a 3D image (3, X)
-    centroid_image[tuple(centroids.T)] = 1
-    # Dilate centroid markers
-    centroid_image = skimage.morphology.dilation(centroid_image, skimage.morphology.ball(dilation))
-
-    edges = skimage.segmentation.find_boundaries(
-            labels, connectivity=connectivity, mode=mode
-        )
-
-    if one_hot:
-        background = np.zeros_like(labels)
-        # Background is where there is no GT
-        background[labels == 0] = 1
-        output = [background, edges, centroid_image]
-        return np.stack(output, axis=0)
-    else:
-        # Bump centroid label up to 2
-        centroid_image[centroid_image == 1] = 2
-        output = np.stack([edges, centroid_image], axis=0)
-        return np.max(output, axis=0)
 
 
 class EdgesAndCentroids2(DualTransform):
@@ -707,7 +529,7 @@ class EdgesAndCentroids2(DualTransform):
         return image
 
     def apply_to_mask(self, mask):
-        return edges_and_centroids2(
+        return F.edges_and_centroids2(
             mask,
             mode=self.mode,
             connectivity=self.connectivity,
