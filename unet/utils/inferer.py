@@ -18,6 +18,8 @@ from elf.segmentation.multicut import (
     transform_probabilities_to_costs,
 )
 from neptune.new.types import File
+import nd2
+import numpy as np
 
 
 class Inferer:
@@ -28,6 +30,9 @@ class Inferer:
         batch_size=4,
         overlap=0.75,
         patch_mode="gaussian",
+        min_size=15,
+        max_size=250,
+        threshold=0.5,
         neptune_run=None,
     ):
         self.model = model
@@ -35,6 +40,9 @@ class Inferer:
         self.batch_size = batch_size
         self.overlap = overlap
         self.patch_mode = patch_mode
+        self.min_size = min_size
+        self.max_size = max_size
+        self.threshold = threshold
         self.neptune_run = neptune_run
 
         if torch.cuda.is_available():
@@ -57,7 +65,7 @@ class Inferer:
             )
         return prediction
 
-    def predict_from_csv(self, inference_data_csv):
+    def predict_from_csv(self, inference_data_csv, from_nd2=False):
         """Iterate through the first column of the data inference csv"""
         # Create new columns to store prediction and segmentation paths
         inference_data_csv["prediction"] = np.nan
@@ -65,7 +73,13 @@ class Inferer:
         # Create an output folder of just the predictions and segmentations
         os.makedirs("output", exist_ok=True)
         for i, input_image_path in enumerate(inference_data_csv.iloc[:, 0]):
-            input_image = skimage.io.imread(input_image_path).astype(np.float32)
+            print(input_image_path)
+            if from_nd2:
+                input_image = nd2.imread(input_image_path).astype(np.float32)
+                # nd2 files have dimension order ZCXY, change to expected CZXY
+                input_image = np.swapaxes(input_image, 1, 0)
+            else:
+                input_image = skimage.io.imread(input_image_path).astype(np.float32)
             input_image = torch.from_numpy(input_image)
             input_image = input_image.unsqueeze(0)  # Add batch dimension
             input_image = input_image.to(self.device)
@@ -94,6 +108,13 @@ class Inferer:
             skimage.io.imsave(
                 prediction_fn, prediction, check_contrast=False, compression=("zlib", 1)
             )
+            # Filter out large and small objects
+            segmentation = utils.filter_objects(
+                segmentation,
+                min_size=self.min_size,
+                max_size=self.max_size 
+                )
+            
             skimage.io.imsave(
                 segmentation_fn,
                 segmentation,
@@ -162,10 +183,9 @@ class Inferer:
         """Performs multicut segmentation on a border prediction"""
         ws, _ = distance_transform_watershed(
             prediction,
-            threshold=0.5,
+            threshold=self.threshold,
             sigma_seeds=2.0,
-            min_size=15,
-            # sigma_weights=2.0
+            min_size=self.min_size
         )
 
         rag = compute_rag(ws)
