@@ -70,8 +70,12 @@ def run_inference(image_path_list, patch_size, patch_overlap, patch_mode, batch_
         threshold=threshold
         )
     
+    # If all paths contain the nd2 extension, load nd2 files. 
+    # Assumes heterogeenous files are not uploaded
+    img_format = all([i for i in image_path_list if ".nd2" in i])
+
     # Run inference on csv 
-    infer.predict_from_csv(inference_data_csv)
+    infer.predict_from_csv(inference_data_csv, from_nd2=img_format)
 
     output_paths = inference_data_csv.loc[:, "segmentation"].tolist()
 

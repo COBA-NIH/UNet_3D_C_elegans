@@ -7,7 +7,7 @@ FROM pytorch/pytorch:1.13.0-cuda11.6-cudnn8-runtime
 RUN conda install -c conda-forge nifty python-elf
 
 # Install other UNet deps
-RUN python -m pip install gradio==3.25.0 scikit-image numpy monai pandas neptune-client==0.16.18
+RUN python -m pip install gradio==3.25.0 scikit-image numpy monai pandas neptune-client==0.16.18 nd2
 
 ENV HOME=/workspace
 
