@@ -20,6 +20,21 @@ The segmentation above involves the following steps:
 3. Perform graph-based partitioning on the watershed super-pixels
    1. This will group similar super pixels together, creating cell instance segmentations
 
+
+# How to run
+
+The fastest and easist way to use this model is to download and run the docker container. This will serve a Gradio GUI in your web browser that you can submit inference jobs with. To do so, run the following commands in your terminal:
+```
+docker pull ctromanscoia/unet3d_c_elegans:latest
+docker run -it --rm -p 127.0.0.1:8000:8000 ctromanscoia/unet3d_c_elegans:latest
+```
+Then, navigate to [http://localhost:8000/](http://localhost:8000/) to adjust parameters and submit images for inference. 
+
+
+Alternatively, check out `notebooks/example_usage.ipynb` on how to run training and inference.
+
+
+
 # Training strategy
 
 The images to be segmented are 2-channel 3D arrays with a typical shape of (25, 1024, 1024). The z-depth varies from image to image.
