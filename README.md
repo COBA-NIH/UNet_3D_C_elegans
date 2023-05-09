@@ -25,8 +25,8 @@ The segmentation above involves the following steps:
 
 The fastest and easist way to use this model is to download and run the docker container. This will serve a Gradio GUI in your web browser that you can submit inference jobs with. To do so, run the following commands in your terminal:
 ```
-docker pull ctromanscoia/unet3d_c_elegans:latest
-docker run -it --rm -p 127.0.0.1:8000:8000 ctromanscoia/unet3d_c_elegans:latest
+docker pull ctromanscoia/unet3d_c_elegans:0.1
+docker run -it --rm -p 127.0.0.1:8000:8000 ctromanscoia/unet3d_c_elegans:0.1
 ```
 Then, navigate to [http://localhost:8000/](http://localhost:8000/) to adjust parameters and submit images for inference. 
 
