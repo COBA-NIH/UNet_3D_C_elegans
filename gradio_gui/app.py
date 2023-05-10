@@ -70,12 +70,16 @@ def run_inference(image_path_list, patch_size, patch_overlap, patch_mode, batch_
         threshold=threshold
         )
     
-    # If all paths contain the nd2 extension, load nd2 files. 
-    # Assumes heterogeenous files are not uploaded
-    img_format = all([i for i in image_path_list if ".nd2" in i])
-
+    if all(inference_data_csv["images"].str.endswith(".nd2")):
+        nd2 = True
+    elif all(inference_data_csv["images"].str.endswith(".tif")):
+        nd2 = False
+    # Heterogeneous file types are not allowed
+    else:
+        raise ValueError("Only .nd2 files and .tif files (with shape C, Z, X, Y) are supported.")
+    
     # Run inference on csv 
-    infer.predict_from_csv(inference_data_csv, from_nd2=img_format)
+    infer.predict_from_csv(inference_data_csv, from_nd2=nd2)
 
     output_paths = inference_data_csv.loc[:, "segmentation"].tolist()
 
