@@ -73,7 +73,6 @@ class Inferer:
         # Create an output folder of just the predictions and segmentations
         os.makedirs("output", exist_ok=True)
         for i, input_image_path in enumerate(inference_data_csv.iloc[:, 0]):
-            print(input_image_path)
             if from_nd2:
                 input_image = nd2.imread(input_image_path).astype(np.float32)
                 # nd2 files have dimension order ZCXY, change to expected CZXY
@@ -96,10 +95,10 @@ class Inferer:
 
             save_path = pathlib.Path(input_image_path)
             prediction_fn = os.path.join(
-                "./output/", f"{save_path.stem}_prediction{save_path.suffix}"
+                "./output/", f"{save_path.stem}_prediction.tiff"
             )
             segmentation_fn = os.path.join(
-                "./output/", f"{save_path.stem}_segmentation{save_path.suffix}"
+                "./output/", f"{save_path.stem}_segmentation.tiff"
             )
             # Add filenames to output csv
             inference_data_csv.loc[i, "prediction"] = prediction_fn
