@@ -82,6 +82,7 @@ def run_inference(image_path_list, patch_size, patch_overlap, patch_mode, batch_
     infer.predict_from_csv(inference_data_csv, from_nd2=nd2)
 
     output_paths = inference_data_csv.loc[:, "segmentation"].tolist()
+    output_paths.extend(inference_data_csv.loc[:, "prediction"].tolist())
 
     print("Finished!")
 
