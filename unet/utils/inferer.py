@@ -105,7 +105,7 @@ class Inferer:
             inference_data_csv.loc[i, "segmentation"] = segmentation_fn
             # Save output
             skimage.io.imsave(
-                prediction_fn, prediction, check_contrast=False, compression=("zlib", 1)
+                prediction_fn, prediction.astype(np.float16), check_contrast=False, compression=("zlib", 1)
             )
             # Filter out large and small objects
             segmentation = utils.filter_objects(
@@ -116,7 +116,7 @@ class Inferer:
             
             skimage.io.imsave(
                 segmentation_fn,
-                segmentation,
+                segmentation.astype(np.uint16),
                 check_contrast=False,
                 compression=("zlib", 1),
             )
