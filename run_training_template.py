@@ -161,7 +161,7 @@ def main_worker(args):
         model, 
         weights_path="weights/best_checkpoint_exp_044.pytorch", 
         device="cpu", # Load to CPU and convert to GPU later
-        dict_key="model_state_dict"
+        dict_key="state_dict"
     )
 
     model = utils.set_parameter_requires_grad(model, trainable=True)
