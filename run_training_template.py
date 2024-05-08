@@ -146,7 +146,7 @@ def main_worker(args):
     data_loader = {"train": train_loader, "val": val_loader}
 
     model = UNet3D(
-        in_channels=1, out_channels=1, f_maps=32
+        in_channels=params["in_channels"], out_channels=1, f_maps=32
     )
 
     # model = utils.load_weights(
