@@ -208,7 +208,7 @@ def main_worker(args):
         optimizer,
         scheduler,
         num_epochs=params["epochs"],
-        neptune_run=neptune_run
+        neptune_run=None
     )
 
     # Run training/validation
