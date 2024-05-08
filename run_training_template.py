@@ -17,7 +17,7 @@ import unet.utils.data_utils as utils
 
 import neptune.new as neptune
 
-neptune_run = None
+neptune_run = {}
 
 parser = argparse.ArgumentParser(description="3DUnet Training")
 
@@ -159,7 +159,7 @@ def main_worker(args):
 
     model = utils.load_weights(
         model, 
-        weights_path="../3DUnet_lightsheet_boundary_best_checkpoint.pytorch", 
+        weights_path="weights/best_checkpoint_exp_044.pytorch", 
         device="cpu", # Load to CPU and convert to GPU later
         dict_key="model_state_dict"
     )
@@ -248,7 +248,7 @@ def main_worker(args):
         infer = Inferer(
             model=model, 
             patch_size=params["patch_size"],
-            neptune_run=neptune_run
+            neptune_run=None
             )
 
         infer.predict_from_csv(load_data)
