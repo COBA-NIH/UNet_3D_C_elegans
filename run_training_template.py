@@ -17,7 +17,7 @@ import unet.utils.data_utils as utils
 
 import neptune.new as neptune
 
-neptune_run = None
+neptune_run = {}
 
 parser = argparse.ArgumentParser(description="3DUnet Training")
 
@@ -146,7 +146,7 @@ def main_worker(args):
     data_loader = {"train": train_loader, "val": val_loader}
 
     model = UNet3D(
-        in_channels=1, out_channels=1, f_maps=32
+        in_channels=params["in_channels"], out_channels=1, f_maps=32
     )
 
     # model = utils.load_weights(
@@ -159,9 +159,9 @@ def main_worker(args):
 
     model = utils.load_weights(
         model, 
-        weights_path="../3DUnet_lightsheet_boundary_best_checkpoint.pytorch", 
+        weights_path="weights/best_checkpoint_exp_044.pytorch", 
         device="cpu", # Load to CPU and convert to GPU later
-        dict_key="model_state_dict"
+        dict_key="state_dict"
     )
 
     model = utils.set_parameter_requires_grad(model, trainable=True)
@@ -208,7 +208,7 @@ def main_worker(args):
         optimizer,
         scheduler,
         num_epochs=params["epochs"],
-        neptune_run=neptune_run
+        neptune_run=None
     )
 
     # Run training/validation
@@ -248,7 +248,7 @@ def main_worker(args):
         infer = Inferer(
             model=model, 
             patch_size=params["patch_size"],
-            neptune_run=neptune_run
+            neptune_run=None
             )
 
         infer.predict_from_csv(load_data)
