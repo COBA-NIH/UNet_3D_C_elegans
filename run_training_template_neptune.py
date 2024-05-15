@@ -17,10 +17,11 @@ import unet.utils.data_utils as utils
 
 import neptune.new as neptune
 
-neptune_run = None
-
-if neptune_run is None:
-    neptune_run = {}
+neptune_run = neptune.init_run(
+    tags=["testing_neptune_on"],
+    project="BroadImagingPlatform/maddox",
+    api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1MDliZmIxMS02NjNhLTQ0OTMtYjYwMS1lOWM3N2ZmMjdlYzAifQ==",
+)
 
 parser = argparse.ArgumentParser(description="3DUnet Training")
 
@@ -211,7 +212,7 @@ def main_worker(args):
         optimizer,
         scheduler,
         num_epochs=params["epochs"],
-        neptune_run=None
+        neptune_run=neptune_run
     )
 
     # Run training/validation
@@ -251,12 +252,12 @@ def main_worker(args):
         infer = Inferer(
             model=model, 
             patch_size=params["patch_size"],
-            neptune_run=None
+            neptune_run=neptune_run
             )
 
         infer.predict_from_csv(load_data)
 
-   # neptune_run.stop()
+    neptune_run.stop()
 
 if __name__ == "__main__":
     main()
