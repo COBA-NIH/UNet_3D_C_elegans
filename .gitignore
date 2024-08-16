@@ -2,3 +2,6 @@ __pycache__/
 .DS_Store
 
 *.tif
+data/images_test_stacked_channels/images_test_stacked_channels.tar.gz
+data/images_stacked_channels/images_stacked_channels.tar.gz
+unet_3d.tar.gz
