@@ -161,12 +161,12 @@ def main_worker(args):
     # )
 
 
-    model = utils.load_weights(
-        model, 
-        weights_path="../best_checkpoint_exp_044.pytorch", 
-        device="cpu", # Load to CPU and convert to GPU later
-        dict_key="state_dict"
-    )
+#    model = utils.load_weights(
+ #       model, 
+  #      weights_path="../best_checkpoint_exp_044.pytorch", 
+   #     device="cpu", # Load to CPU and convert to GPU later
+    #    dict_key="state_dict"
+    #)
 
     model = utils.set_parameter_requires_grad(model, trainable=True)
 
