@@ -13,7 +13,7 @@ load_data = pd.concat([load_data_train_no_lab, load_data_test])
 load_data.reset_index(inplace=True, drop=True)
 
 model = UNet3D(
-    in_channels=params["in_channels"], out_channels=1, f_maps=32
+    in_channels=2, out_channels=1, f_maps=32
 )
 
 try:
@@ -35,7 +35,7 @@ model.to("cuda")
 
 infer = Inferer(
     model=model, 
-    patch_size=[24, 100, 100]
+    patch_size=[24, 200, 200]
     )
 
 infer.predict_from_csv(load_data)
