@@ -19,14 +19,14 @@ model = UNet3D(
 try:
     model = utils.load_weights(
         model, 
-        weights_path="best_checkpoint.pytorch", 
+        weights_path="best_checkpoint_exp_044.pytorch", 
         device="cpu", # Load to CPU and convert to GPU later
         dict_key="state_dict"
     )
 except:
     model = utils.load_weights(
         model, 
-        weights_path="../best_checkpoint.pytorch", 
+        weights_path="../best_checkpoint_exp_044.pytorch", 
         device="cpu", # Load to CPU and convert to GPU later
         dict_key="state_dict"
     )
