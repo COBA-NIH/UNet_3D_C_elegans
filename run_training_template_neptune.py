@@ -23,7 +23,7 @@ neptune_run = neptune.init_run(
     api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1MDliZmIxMS02NjNhLTQ0OTMtYjYwMS1lOWM3N2ZmMjdlYzAifQ==",
 )
 
-parser = argparse.ArgumentParser(description="3DUnet Training")
+parser  = argparse.ArgumentParser(description="3DUnet Training")
 
 # nargs="?" required to fall back to default if no arg provided
 parser.add_argument("data", nargs="?")
@@ -161,12 +161,12 @@ def main_worker(args):
     # )
 
 
-    model = utils.load_weights(
-        model, 
-        weights_path="../best_checkpoint_exp_044.pytorch", 
-        device="cpu", # Load to CPU and convert to GPU later
-        dict_key="state_dict"
-    )
+#    model = utils.load_weights(
+ #       model, 
+  #      weights_path="../best_checkpoint_exp_044.pytorch", 
+   #     device="cpu", # Load to CPU and convert to GPU later
+    #    dict_key="state_dict"
+    #)
 
     model = utils.set_parameter_requires_grad(model, trainable=True)
 
