@@ -51,7 +51,7 @@ params = {
     "batch_size": args.batch,
     "epochs": args.epochs,
     "val_split": 0.2,
-    "patch_size": (24, 200, 200),
+    "patch_size": (24, 100, 100),
     "create_wmap": True, ##
     "lr": 1e-2,
     "weight_decay": 1e-5,

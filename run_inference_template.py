@@ -35,7 +35,7 @@ model.to("cuda")
 
 infer = Inferer(
     model=model, 
-    patch_size=[24, 200, 200]
+    patch_size=[24, 400, 400]
     )
 
 infer.predict_from_csv(load_data)
