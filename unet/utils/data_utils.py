@@ -174,7 +174,7 @@ def calculate_weight_map(gt_array, centroid_class_index=2, edge_class_index=1, l
         for obj in objects:
             size = np.sum(labels == obj)  # Calculate the size of the cell
             scaling_factor = calculate_scaling_factor(size)  # Function to determine scaling based on size
-            w[edge_class_index] += scaling_factor * w0 * np.exp(-1 * ((d1 + d2) ** 2) / (2 * sigma ** 2)) * (labels == obj).astype(np.uint8)
+            w[edge_class_index] += scaling_factor * w0 * np.exp(-1 * ((d1 + d2) ** 2) / (2 * sigma ** 2)) * (gt_array[edge_class_index] > 0.5).astype(np.uint8)
     
 	#w[edge_class_index] = w0 * np.exp(-1 * ((d1 + d2) ** 2) / (2 * sigma ** 2)) * (gt_array[edge_class_index] > 0.5).astype(np.uint8)
         #  * (gt_array[centroid_class_index] == background_class).astype(np.uint8)
