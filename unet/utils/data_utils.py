@@ -171,7 +171,12 @@ def calculate_weight_map(gt_array, centroid_class_index=2, edge_class_index=1, l
         # We multiply by the centroid == background array so that we filter out any distances 
         # that may bleed into the centroid - we want the distance information to only be 
         # in the edge and background classes (I think). 
-        w[edge_class_index] = w0 * np.exp(-1 * ((d1 + d2) ** 2) / (2 * sigma ** 2)) * (gt_array[edge_class_index] > 0.5).astype(np.uint8)
+        for obj in objects:
+            size = np.sum(labels == obj)  # Calculate the size of the cell
+            scaling_factor = calculate_scaling_factor(size)  # Function to determine scaling based on size
+            w[edge_class_index] += scaling_factor * w0 * np.exp(-1 * ((d1 + d2) ** 2) / (2 * sigma ** 2)) * (labels == obj).astype(np.uint8)
+    
+	#w[edge_class_index] = w0 * np.exp(-1 * ((d1 + d2) ** 2) / (2 * sigma ** 2)) * (gt_array[edge_class_index] > 0.5).astype(np.uint8)
         #  * (gt_array[centroid_class_index] == background_class).astype(np.uint8)
         
     # Array to hold class weights
@@ -185,6 +190,10 @@ def calculate_weight_map(gt_array, centroid_class_index=2, edge_class_index=1, l
     wc_x = w + wc_x
     
     return wc_x
+
+def calculate_scaling_factor(cell_size, base_factor=1.0, exponent=0.5):
+    # Example scaling factor: Increase weight by size^exponent
+    return base_factor * (cell_size ** exponent)
 
 def make_sequential(array):
     unique = np.unique(array)
