@@ -124,6 +124,7 @@ class Inferer:
         inference_data_csv = self.calculate_prediction_performance(inference_data_csv)
 
         inference_data_csv.to_csv("./output/inference_data.csv", index=False)
+        return inference_data_csv
 
     def calculate_prediction_performance(self, df):
         # Select rows that have a corresponding mask

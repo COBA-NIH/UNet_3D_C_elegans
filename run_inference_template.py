@@ -4,6 +4,21 @@ from unet.utils.inferer import Inferer
 import unet.utils.data_utils as utils
 import torch
 import numpy as np
+import neptune.new as neptune
+#from neptune.types import File
+import tarfile
+import tifffile
+from PIL import Image
+import os
+
+output_folder = "output" 
+
+neptune_run = neptune.init_run(
+    tags=["testing_neptune_on"],
+    project="BroadImagingPlatform/maddox",
+    api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1MDliZmIxMS02NjNhLTQ0OTMtYjYwMS1lOWM3N2ZmMjdlYzAifQ==",
+    custom_run_id="Maddox_id_test_7", # Usamos el mismo run_id que en el código A
+)
 
 load_data_train_no_lab = pd.read_csv("data/data_test_stacked_channels.csv")
 load_data_test = pd.read_csv("data/data_stacked_channels_training.csv")
@@ -35,7 +50,14 @@ model.to("cuda")
 
 infer = Inferer(
     model=model, 
-    patch_size=[24, 400, 400]
+    patch_size=[24, 100, 100]
     )
 
 infer.predict_from_csv(load_data)
+
+output_tar_gz = "output.tar.gz"
+folder_to_compress = "output"
+with tarfile.open(output_tar_gz, "w:gz") as tar:
+    tar.add(folder_to_compress, arcname=os.path.basename(folder_to_compress))  # Compress folder
+
+neptune_run["Prediction/images_tif"].upload("output.tar.gz")
