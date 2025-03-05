@@ -21,7 +21,7 @@ neptune_run = neptune.init_run(
     tags=["testing_neptune_on"],
     project="BroadImagingPlatform/maddox",
     api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1MDliZmIxMS02NjNhLTQ0OTMtYjYwMS1lOWM3N2ZmMjdlYzAifQ==",
-    custom_run_id="Maddox_id_test_7"
+    custom_run_id="gt2_epoch600_alltest"
 )
 
 parser  = argparse.ArgumentParser(description="3DUnet Training")
@@ -56,7 +56,7 @@ params = {
     "create_wmap": True, ##
     "lr": 1e-2,
     "weight_decay": 1e-5,
-    "in_channels": 2,
+    "in_channels": 1,
     "out_channels": 1,
     "scheduler_factor": 0.2,
     "scheduler_patience": 20,
@@ -162,12 +162,12 @@ def main_worker(args):
     # )
 
 
-    model = utils.load_weights(
-        model, 
-        weights_path="../best_checkpoint_exp_044.pytorch",
-        device="cpu", # Load to CPU and convert to GPU later
-        dict_key="state_dict"
-    )
+#    model = utils.load_weights(
+ #       model, 
+  #      weights_path="../unet3d-lateral-root-lightsheet-ds1x.pytorch",
+   #     device="cpu", # Load to CPU and convert to GPU later
+    #    dict_key="state_dict"
+   # )
 
     model = utils.set_parameter_requires_grad(model, trainable=True)
 
