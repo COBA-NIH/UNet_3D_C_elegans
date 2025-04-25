@@ -175,3 +175,22 @@ def edges_and_centroids2(
         centroid_image[centroid_image == 1] = 2
         output = np.stack([edges, centroid_image], axis=0)
         return np.max(output, axis=0)
+
+def labels_to_edges_and_binary(labels, mode, connectivity, blur):
+
+    labels = labels.astype(int)
+    print(f'labels shape: {labels.shape}')
+    regions = skimage.measure.regionprops(labels)
+    if len(regions) > 0:
+        cell_edges = skimage.segmentation.find_boundaries(labels, connectivity)
+        cell_edges = skimage.filters.gaussian(cell_edges, sigma=blur)
+        foreground = np.zeros_like(labels)
+        foreground[labels >= 1] = 1
+        output = [cell_edges, foreground]
+    else:
+        # GT is blank
+        output = [labels, labels]
+    output = np.stack(output, axis=0)
+    #output_4d = np.expand_dims(output, axis=0)
+    #print("labels function",labels.shape,output.shape)
+    return output

@@ -193,13 +193,16 @@ class LabelsToEdges(DualTransform):
         self.connectivity = connectivity
     
     def apply(self, image):
+        print("running apply",image.shape)
         return image
 
     def apply_to_mask(self, mask):
         edges = skimage.segmentation.find_boundaries(mask, mode=self.mode, connectivity=self.connectivity)
+        print("running apply to mask",edges.shape)
         return edges
 
     def apply_to_wmap(self, wmap):
+        print("running apply to wmap",wmap.shape)
         return wmap
 
 class LabelsToEdgesAndCentroids(DualTransform):
@@ -222,7 +225,25 @@ class LabelsToEdgesAndCentroids(DualTransform):
     def apply_to_wmap(self, wmap):
         return wmap
 
+class LabelsToEdgesAndBinary(DualTransform):
+    def __init__(self, mode="thick", connectivity=2, blur=2, p=1):
+        super().__init__(p=p)
+        self.mode = mode
+        self.connectivity = connectivity
+        self.blur = blur
 
+    def apply(self, image):
+        """The image is not changed"""
+        return image
+
+    def apply_to_mask(self, mask):
+        return F.labels_to_edges_and_binary(
+            mask, self.mode, self.connectivity, self.blur
+        )
+
+    def apply_to_wmap(self, wmap):
+        return wmap   
+    
 class ToTensor(DualTransform):
     """Convert input into a tensor. If input has ndim=3 (D, H, W), will expand dims
     to add channel (C, D, H, W)"""
@@ -583,13 +604,16 @@ class EdgeMaskWmap(DualTransform):
         self.invert_wmap = invert_wmap
 
     def apply(self, image):
+        print("running Edge Mask Wmap apply",image.shape)
         return image
     
     def apply_to_mask(self, mask):
         self.mask = mask
+        print("running Edge Mask Wmap apply to mask",mask.shape)
         return mask
 
     def apply_to_wmap(self, wmap):
+        print("running Edge Mask Wmap apply to wmap",wmap.shape)
         wmap = (self.edge_multiplier * self.mask) + (self.wmap_multiplier * wmap) 
         # wmap[self.mask == 0] = 0
         wmap = np.where(self.mask == 0, 0, wmap)
@@ -597,4 +621,30 @@ class EdgeMaskWmap(DualTransform):
             non_zero_mask = wmap != 0
             wmap[non_zero_mask] = np.max(wmap[non_zero_mask]) - wmap[non_zero_mask] + np.min(wmap[non_zero_mask])
         # wmap = self.mask + wmap
+        print(wmap.shape)
         return wmap
+class BinaryMaskWmap(DualTransform):
+    def __init__(self, edge_multiplier=1, wmap_multiplier=1, invert_wmap=False, always_apply=True):
+        super().__init__(always_apply=always_apply)
+        self.edge_multiplier = edge_multiplier
+        self.wmap_multiplier = wmap_multiplier
+        self.invert_wmap = invert_wmap
+
+    def apply(self, image):
+        return image
+    
+    def apply_to_mask(self, mask):
+        self.mask = mask
+        return mask
+
+    def apply_to_wmap(self, wmap):
+        #print("wmap shape", wmap.shape, "mask shape", self.mask.shape)
+        wmap_0 = (self.edge_multiplier * self.mask[0]) + (self.wmap_multiplier * wmap) 
+        # wmap[self.mask == 0] = 0
+        wmap_0 = np.where(self.mask[0] == 0, 0, wmap_0)
+        if self.invert_wmap and self.mask[0].max() != 0:
+            non_zero_mask = wmap_0 != 0
+            wmap_0[non_zero_mask] = np.max(wmap_0[non_zero_mask]) - wmap_0[non_zero_mask] + np.min(wmap_0[non_zero_mask])
+        # wmap = self.mask + wmap
+        #print(wmap_0.shape,self.mask[1,:,:].shape)
+        return np.stack([wmap_0,self.mask[1,:,:]],axis=0)
