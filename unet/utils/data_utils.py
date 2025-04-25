@@ -277,7 +277,7 @@ def find_parameter_requires_grad(model):
     for name, param in model.named_parameters():
         if param.requires_grad == True:
             params_to_update.append(param)
-            print("Training:", name)
+            print("Training: here", name)
     return params_to_update
 
 # def watershed_from_edges(edges, threshold=0.5, erosion_footprint=skimage.morphology.ball(1)):
