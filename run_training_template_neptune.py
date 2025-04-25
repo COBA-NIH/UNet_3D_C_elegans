@@ -17,11 +17,16 @@ import unet.utils.data_utils as utils
 
 import neptune.new as neptune
 
+#_tmp_log_file_name = "tmp_log_file.txt"
+
+_CUSTOM_RUN_ID = "gt3_test3_binary4"
+
 neptune_run = neptune.init_run(
     tags=["testing_neptune_on"],
     project="BroadImagingPlatform/maddox",
     api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1MDliZmIxMS02NjNhLTQ0OTMtYjYwMS1lOWM3N2ZmMjdlYzAifQ==",
-    custom_run_id="gt2_epoch600_alltest"
+    custom_run_id=_CUSTOM_RUN_ID,
+    source_files=["**/*.py"]
 )
 
 parser  = argparse.ArgumentParser(description="3DUnet Training")
@@ -47,7 +52,10 @@ params = {
     "ElasticDeform": {"sigma":10, "p":0.5, "channel_axis": 0, "mode":"mirror"},
     "LabelsToEdges": {"connectivity": 2, "mode":"thick"},
     "EdgeMaskWmap": {"edge_multiplier":2, "wmap_multiplier":1, "invert_wmap":True},
-    # "BlurMasks": {"sigma": 2},
+    #"LabelsToEdgesAndBinary": {"connectivity": 2, "mode": "thick","blur":2, "run_id": _CUSTOM_RUN_ID, "log_file": _tmp_log_file_name},
+    "LabelsToEdgesAndBinary": {"connectivity": 2, "mode": "thick","blur":2},
+
+    "BinaryMaskWmap": {"edge_multiplier":2, "wmap_multiplier":1, "invert_wmap":True},
     "ToTensor": {},
     "batch_size": args.batch,
     "epochs": args.epochs,
@@ -57,7 +65,7 @@ params = {
     "lr": 1e-2,
     "weight_decay": 1e-5,
     "in_channels": 1,
-    "out_channels": 1,
+    "out_channels": 2,
     "scheduler_factor": 0.2,
     "scheduler_patience": 20,
     "scheduler_mode": "min",
@@ -68,7 +76,7 @@ params = {
 }
 
 neptune_run["parameters"] = params
-
+print("before train transforms")
 train_transforms = [
     aug.Normalize(**params["Normalize"]),
     aug.RandomContrastBrightness(**params["RandomContrastBrightness"]),
@@ -78,15 +86,23 @@ train_transforms = [
     aug.RandomGaussianNoise(**params["RandomGaussianNoise"]),
     aug.RandomPoissonNoise(**params["RandomPoissonNoise"]),
     aug.ElasticDeform(**params["ElasticDeform"]),
-    aug.LabelsToEdges(**params["LabelsToEdges"]),
-    aug.EdgeMaskWmap(**params["EdgeMaskWmap"]),
+    #aug.LabelsToEdges(**params["LabelsToEdges"]),
+    #aug.EdgeMaskWmap(**params["EdgeMaskWmap"]),
+    #aug.LabelsToEdgesAndBinary(**params["LabelsToEdgesAndBinary"]),
+    #aug.BinaryMaskWmap(**params["BinaryMaskWmap"]),
     # aug.BlurMasks(**params["BlurMasks"]),
-    aug.ToTensor()
+    #aug.ToTensor()
 ]
+
+print(train_transforms['image'].shape)
+neptune_run["debug/print"].log("log messages")
+
 val_transforms = [
     aug.Normalize(**params["Normalize"]),
-    aug.LabelsToEdges(**params["LabelsToEdges"]),
-    aug.EdgeMaskWmap(**params["EdgeMaskWmap"]),
+    #aug.LabelsToEdges(**params["LabelsToEdges"]),
+    #aug.EdgeMaskWmap(**params["EdgeMaskWmap"]),
+    aug.LabelsToEdgesAndBinary(**params["LabelsToEdgesAndBinary"]),
+    aug.BinaryMaskWmap(**params["BinaryMaskWmap"]),
     # aug.BlurMasks(**params["BlurMasks"]),
     aug.ToTensor()
 ]
@@ -151,7 +167,7 @@ def main_worker(args):
     data_loader = {"train": train_loader, "val": val_loader}
 
     model = UNet3D(
-        in_channels=params["in_channels"], out_channels=1, f_maps=32
+        in_channels=params["in_channels"], out_channels=params["out_channels"], f_maps=32
     )
 
     # model = utils.load_weights(
@@ -213,11 +229,20 @@ def main_worker(args):
         optimizer,
         scheduler,
         num_epochs=params["epochs"],
+       
+       
         neptune_run=neptune_run
     )
 
     # Run training/validation
+    #try:
     trainer.fit()
+    #except:
+     #   with open(_tmp_log_file_name, "w") as file:
+      #      print("It went wrong, but here's what I got so far:")
+       #     for line in file:
+        #        print(line)
+         #       print("log_file.txt open")
 
     if args.withinference:
         # Run inference pipeline
@@ -258,7 +283,14 @@ def main_worker(args):
 
         infer.predict_from_csv(load_data)
     neptune_run["best_checkpoint/model"].upload("best_checkpoint.pytorch")
+    
     neptune_run.stop()
+    
+    #_tmp_log_file.close()
+    #with open("tmp_log_file.txt", "r") as file:
+    #    for line in file:
+    #        print(line, end='')
+    #        print("log_file.txt open")
 
 if __name__ == "__main__":
     main()
