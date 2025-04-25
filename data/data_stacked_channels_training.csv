@@ -1,5 +1,4 @@
 images,masks,train
-./data/images_stacked_channels/new_groundtruth-stacked-channels.tif,./data/masks/new_groundtruth_mask.tif,TRUE
-./data/images_stacked_channels/mx85-nd-acqusition-0-stacked-channels.tif,./data/masks/mx85-nd-acqusition-0-ground-truth.tif,TRUE
-./data/images_stacked_channels/mx85-nd-acqusition-1-stacked-channels.tif,./data/masks/mx85-nd-acqusition-1-ground-truth.tif,TRUE
-./data/images_stacked_channels/mx85-nd-acqusition-8-stacked-channels.tif,./data/masks/mx85-nd-acqusition-8-ground-truth.tif,FALSE
+./data/images_stacked_channels/new_groundtruth-one-channel.tif,./data/masks/new_groundtruth-one-channel_masks.tif,TRUE
+./data/images_stacked_channels/NDAcquisition3.tif,./data/masks/NDAcquisition3_mask.tif,TRUE
+./data/images_stacked_channels/NDAcquisition1.tif,./data/masks/NDAcquisition1_mask.tif,FALSE
