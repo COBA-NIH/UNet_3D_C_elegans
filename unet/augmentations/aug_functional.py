@@ -180,17 +180,23 @@ def labels_to_edges_and_binary(labels, mode, connectivity, blur):
 
     labels = labels.astype(int)
     print(f'labels shape: {labels.shape}')
-    regions = skimage.measure.regionprops(labels)
+    labels_squeeze = np.squeeze(labels)
+    regions = skimage.measure.regionprops(labels_squeeze)
+    #labels= np.expand_dims(output, axis=0)
     if len(regions) > 0:
-        cell_edges = skimage.segmentation.find_boundaries(labels, connectivity)
+        print("this label patch is not blank")
+        cell_edges = skimage.segmentation.find_boundaries(labels_squeeze, connectivity)
         cell_edges = skimage.filters.gaussian(cell_edges, sigma=blur)
-        foreground = np.zeros_like(labels)
-        foreground[labels >= 1] = 1
-        output = [cell_edges, foreground]
+        print(f'cell_edges shape: {cell_edges.shape}')
+        foreground = np.zeros_like(labels_squeeze)
+        foreground[labels_squeeze >= 1] = 1
+        print(f'foreground shape: {foreground.shape}')
+        output = [cell_edges, foreground]        
     else:
+        print("this label patch is blank")
         # GT is blank
-        output = [labels, labels]
+        output = [labels_squeeze, labels_squeeze]
     output = np.stack(output, axis=0)
     #output_4d = np.expand_dims(output, axis=0)
-    #print("labels function",labels.shape,output.shape)
-    return output
+    print("labels function",labels_squeeze.shape,output.shape)
+    return output[1:2] #just get the foreground as a mask
