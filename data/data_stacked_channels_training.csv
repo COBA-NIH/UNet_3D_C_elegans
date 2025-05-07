@@ -1,4 +1,2 @@
 images,masks,train
 ./data/images_stacked_channels/new_groundtruth-one-channel.tif,./data/masks/new_groundtruth-one-channel_masks.tif,TRUE
-./data/images_stacked_channels/NDAcquisition3.tif,./data/masks/NDAcquisition3_mask.tif,TRUE
-./data/images_stacked_channels/NDAcquisition1.tif,./data/masks/NDAcquisition1_mask.tif,FALSE

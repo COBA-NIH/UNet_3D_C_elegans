@@ -195,5 +195,5 @@ def labels_to_edges_and_binary(labels, mode, connectivity, blur):
         output = [labels, labels]
     output = np.stack(output, axis=0)
     #output_4d = np.expand_dims(output, axis=0)
-    #print("labels function",labels.shape,output.shape)
+    print("labels local function",labels.shape,output.shape)
     return output
