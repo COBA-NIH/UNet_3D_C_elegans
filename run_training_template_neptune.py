@@ -19,7 +19,7 @@ import neptune.new as neptune
 
 #_tmp_log_file_name = "tmp_log_file.txt"
 
-_CUSTOM_RUN_ID = "gt3_test3_binary4"
+_CUSTOM_RUN_ID = "gt3_test_binary1epoch"
 
 neptune_run = neptune.init_run(
     tags=["testing_neptune_on"],
@@ -52,9 +52,7 @@ params = {
     "ElasticDeform": {"sigma":10, "p":0.5, "channel_axis": 0, "mode":"mirror"},
     "LabelsToEdges": {"connectivity": 2, "mode":"thick"},
     "EdgeMaskWmap": {"edge_multiplier":2, "wmap_multiplier":1, "invert_wmap":True},
-    #"LabelsToEdgesAndBinary": {"connectivity": 2, "mode": "thick","blur":2, "run_id": _CUSTOM_RUN_ID, "log_file": _tmp_log_file_name},
     "LabelsToEdgesAndBinary": {"connectivity": 2, "mode": "thick","blur":2},
-
     "BinaryMaskWmap": {"edge_multiplier":2, "wmap_multiplier":1, "invert_wmap":True},
     "ToTensor": {},
     "batch_size": args.batch,
@@ -64,7 +62,7 @@ params = {
     "create_wmap": True, ##
     "lr": 1e-2,
     "weight_decay": 1e-5,
-    "in_channels": 1,
+    "in_channels": 2,
     "out_channels": 2,
     "scheduler_factor": 0.2,
     "scheduler_patience": 20,
@@ -88,14 +86,13 @@ train_transforms = [
     aug.ElasticDeform(**params["ElasticDeform"]),
     #aug.LabelsToEdges(**params["LabelsToEdges"]),
     #aug.EdgeMaskWmap(**params["EdgeMaskWmap"]),
-    #aug.LabelsToEdgesAndBinary(**params["LabelsToEdgesAndBinary"]),
-    #aug.BinaryMaskWmap(**params["BinaryMaskWmap"]),
+    aug.LabelsToEdgesAndBinary(**params["LabelsToEdgesAndBinary"]),
+    aug.BinaryMaskWmap(**params["BinaryMaskWmap"]),
     # aug.BlurMasks(**params["BlurMasks"]),
-    #aug.ToTensor()
+    aug.ToTensor()
 ]
 
-print(train_transforms['image'].shape)
-neptune_run["debug/print"].log("log messages")
+#neptune_run["debug/print"].log("log messages")
 
 val_transforms = [
     aug.Normalize(**params["Normalize"]),

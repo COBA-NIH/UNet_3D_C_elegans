@@ -17,21 +17,21 @@ neptune_run = neptune.init_run(
     tags=["testing_neptune_on"],
     project="BroadImagingPlatform/maddox",
     api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1MDliZmIxMS02NjNhLTQ0OTMtYjYwMS1lOWM3N2ZmMjdlYzAifQ==",
-    custom_run_id="gt2_epoch600_alltest" # Usamos el mismo run_id que en el código A
+    custom_run_id="gt3_test_binary1epoch" # Usamos el mismo run_id que en el código A
 )
 
 load_data_train_no_lab = pd.read_csv("data/data_test_stacked_channels.csv")
 load_data_test = pd.read_csv("data/data_stacked_channels_training.csv")
 load_data_test = load_data_test[load_data_test["train"] == False]
 
-neptune_run["datasets/train_data"].upload("data/data_test_stacked_channels.csv")
-neptune_run["datasets/test_data"].upload("data/data_stacked_channels_training.csv")
+neptune_run["datasets/test_data"].upload("data/data_test_stacked_channels.csv")
+neptune_run["datasets/train_data"].upload("data/data_stacked_channels_training.csv")
 
 load_data = pd.concat([load_data_train_no_lab, load_data_test])
 load_data.reset_index(inplace=True, drop=True)
 
 model = UNet3D(
-    in_channels=1, out_channels=1, f_maps=32
+    in_channels=2, out_channels=2, f_maps=32
 )
 
 try:
@@ -53,7 +53,7 @@ model.to("cuda")
 
 infer = Inferer(
     model=model, 
-    patch_size=[24, 100, 100]
+    patch_size=[24, 150, 150]
     )
 
 infer.predict_from_csv(load_data)

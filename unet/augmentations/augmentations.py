@@ -648,5 +648,7 @@ class BinaryMaskWmap(DualTransform):
         # wmap = self.mask + wmap
         print(wmap_0.shape,self.mask.shape)
         #wmap_0_squeeze = np.squeeze(wmap_0)
-        return np.stack([wmap_0[0],self.mask[1]],axis=0)
+        output_4d = np.stack([wmap_0[0],self.mask[1]],axis=0)
+        #output_5d = np.expand_dims(output_4d, axis=0)
+        return output_4d # the output is (C=2,Z,Y,X)
     
