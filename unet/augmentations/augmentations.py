@@ -635,17 +635,18 @@ class BinaryMaskWmap(DualTransform):
     
     def apply_to_mask(self, mask):
         self.mask = mask
-        return np.squeeze(mask)
+        return mask
 
     def apply_to_wmap(self, wmap):
         print("wmap shape", wmap.shape, "mask shape", self.mask.shape)
-        wmap_0 = (self.edge_multiplier * self.mask) + (self.wmap_multiplier * wmap) 
+        wmap_0 = (self.edge_multiplier * self.mask[0]) + (self.wmap_multiplier * wmap) 
         # wmap[self.mask == 0] = 0
-        wmap_0 = np.where(self.mask == 0, 0, wmap_0)
+        wmap_0 = np.where(self.mask[0] == 0, 0, wmap_0)
         if self.invert_wmap and self.mask.max() != 0:
             non_zero_mask = wmap_0 != 0
             wmap_0[non_zero_mask] = np.max(wmap_0[non_zero_mask]) - wmap_0[non_zero_mask] + np.min(wmap_0[non_zero_mask])
         # wmap = self.mask + wmap
         print(wmap_0.shape,self.mask.shape)
-        wmap_0_squeeze = np.squeeze(wmap_0)
-        return wmap_0_squeeze
+        #wmap_0_squeeze = np.squeeze(wmap_0)
+        return np.stack([wmap_0[0],self.mask[1]],axis=0)
+    
