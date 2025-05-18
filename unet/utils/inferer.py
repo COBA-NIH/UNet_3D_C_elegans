@@ -79,17 +79,23 @@ class Inferer:
                 input_image = np.swapaxes(input_image, 1, 0)
             else:
                 input_image = skimage.io.imread(input_image_path).astype(np.float32)
+                input_image = np.stack([input_image[0], input_image[0]], axis=0) #add a second channel 
             input_image = torch.from_numpy(input_image)
             input_image = input_image.unsqueeze(0)  # Add batch dimension
             input_image = input_image.to(self.device)
 
             print(f"Predicting: {input_image_path}")
             prediction = (
-                self.predict_from_image(input_image).cpu().sigmoid().numpy()[0, 0, ...]
+                #self.predict_from_image(input_image).cpu().sigmoid().numpy()[0, 0, ...]
+                self.predict_from_image(input_image).cpu().sigmoid().numpy()[0]
             )  # Remove batch and channel dimensions
 
             print(f"Multicutting: {input_image_path}")
-            segmentation = self.run_multicut(prediction)
+            
+            #segmentation = self.run_multicut(prediction)
+            pred_border = prediction[0]
+            pred_mask = prediction[1]
+            segmentation = self.run_multicut(pred_border) 
             if self.neptune_run:
                 self.neptune_run["segmentation"].upload(File.as_image(segmentation))
 
@@ -124,7 +130,7 @@ class Inferer:
         inference_data_csv = self.calculate_prediction_performance(inference_data_csv)
 
         inference_data_csv.to_csv("./output/inference_data.csv", index=False)
-        return inference_data_csv
+       # return inference_data_csv
 
     def calculate_prediction_performance(self, df):
         # Select rows that have a corresponding mask
@@ -137,6 +143,8 @@ class Inferer:
             print(f"Calculating stats for: {df_masks.loc[img_ind, 'masks']}")
             gt_mask = skimage.io.imread(df_masks.loc[img_ind, "masks"])
             pred = skimage.io.imread(df_masks.loc[img_ind, "segmentation"])
+            print(f"Dimension of gt_mask: {gt_mask.dtype} and {gt_mask.shape}")
+            print(f"Dimension of pred: {pred.dtype} and {pred.shape}")
             # Filter segmentation
             pred = utils.filter_objects(pred)
             # Dataframe to hold IoU threshold stats

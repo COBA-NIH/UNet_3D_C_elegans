@@ -19,7 +19,7 @@ import neptune.new as neptune
 
 #_tmp_log_file_name = "tmp_log_file.txt"
 
-_CUSTOM_RUN_ID = "gt3_test_binary1epoch"
+_CUSTOM_RUN_ID = "gt3_190from195"
 
 neptune_run = neptune.init_run(
     tags=["testing_neptune_on"],
@@ -28,6 +28,7 @@ neptune_run = neptune.init_run(
     custom_run_id=_CUSTOM_RUN_ID,
     source_files=["**/*.py"]
 )
+
 
 parser  = argparse.ArgumentParser(description="3DUnet Training")
 
@@ -91,7 +92,7 @@ train_transforms = [
     # aug.BlurMasks(**params["BlurMasks"]),
     aug.ToTensor()
 ]
-
+print("after train transforms")
 #neptune_run["debug/print"].log("log messages")
 
 val_transforms = [
@@ -136,7 +137,11 @@ def main_worker(args):
         train_ds = CElegansDataset(data_csv=train_dataset, transforms=train_transforms, targets=params["targets"], train_val="train")
 
         val_ds = CElegansDataset(data_csv=val_dataset, transforms=val_transforms, targets=params["targets"], train_val="val")
-
+        output = train_ds[3]        # inspect index from train_ds output
+        mask = output['mask']     # esto es un numpy array
+        weight = output["weight_map"]
+        print(f'last transform mask shape: {mask.shape}')
+        print(f'last transform weight shape: {weight.shape}')
     if torch.cuda.is_available():
         # Find fastest conv
         torch.backends.cudnn.benchmark = True
@@ -175,12 +180,12 @@ def main_worker(args):
     # )
 
 
-#    model = utils.load_weights(
- #       model, 
-  #      weights_path="../unet3d-lateral-root-lightsheet-ds1x.pytorch",
-   #     device="cpu", # Load to CPU and convert to GPU later
-    #    dict_key="state_dict"
-   # )
+    model = utils.load_weights(
+        model, 
+        weights_path="../maddox_195.pytorch",
+        device="cpu", # Load to CPU and convert to GPU later
+        dict_key="state_dict"
+    )
 
     model = utils.set_parameter_requires_grad(model, trainable=True)
 

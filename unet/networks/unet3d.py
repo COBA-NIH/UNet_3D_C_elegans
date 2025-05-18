@@ -71,8 +71,10 @@ def create_conv(in_channels, out_channels, kernel_size, order, num_groups, paddi
 
             # use only one group if the given number of groups is greater than the number of channels
             if num_channels < num_groups:
+                print(f"num_channel line 73 unet3d: {num_channels}")
+                print(f"num_groups line 73 unet3d: {num_groups}")
                 num_groups = 1
-
+                
             assert (
                 num_channels % num_groups == 0
             ), f"Expected number of channels in input to be divisible by num_groups. num_channels={num_channels}, num_groups={num_groups}"
@@ -264,14 +266,18 @@ class ExtResNetBlock(nn.Module):
     def forward(self, x):
         # apply first convolution and save the output as a residual
         out = self.conv1(x)
+        print(f"shape out conv1: {out.shape}")
         residual = out
 
         # residual block
         out = self.conv2(out)
+        print(f"shape out conv2: {out.shape}")
         out = self.conv3(out)
+        print(f"shape out conv3: {out.shape}")
 
         out += residual
         out = self.non_linearity(out)
+        print(f"shape out after out3: {out.shape}")
 
         return out
 

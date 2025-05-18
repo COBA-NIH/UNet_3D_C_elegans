@@ -198,7 +198,7 @@ class RunTraining:
                     weight_map = data["weight_map"].to(self.device)
                 except:
                     weight_map = None
-
+                print(f"input shape to model: {X.shape}")
                 prediction = self.model(X)
 
                 if weight_map is not None:

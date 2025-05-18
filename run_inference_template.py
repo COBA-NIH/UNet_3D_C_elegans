@@ -17,7 +17,7 @@ neptune_run = neptune.init_run(
     tags=["testing_neptune_on"],
     project="BroadImagingPlatform/maddox",
     api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1MDliZmIxMS02NjNhLTQ0OTMtYjYwMS1lOWM3N2ZmMjdlYzAifQ==",
-    custom_run_id="gt3_test_binary1epoch" # Usamos el mismo run_id que en el código A
+    custom_run_id="gt3_repeat_185" # Usamos el mismo run_id que en el código A
 )
 
 load_data_train_no_lab = pd.read_csv("data/data_test_stacked_channels.csv")
@@ -37,14 +37,14 @@ model = UNet3D(
 try:
     model = utils.load_weights(
         model, 
-        weights_path="best_checkpoint.pytorch", 
+        weights_path="maddox_190.pytorch", 
         device="cpu", # Load to CPU and convert to GPU later
         dict_key="state_dict"
     )
 except:
     model = utils.load_weights(
         model, 
-        weights_path="../best_checkpoint.pytorch", 
+        weights_path="../maddox_190.pytorch", 
         device="cpu", # Load to CPU and convert to GPU later
         dict_key="state_dict"
     )

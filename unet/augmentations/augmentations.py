@@ -631,7 +631,7 @@ class BinaryMaskWmap(DualTransform):
         self.invert_wmap = invert_wmap
 
     def apply(self, image):
-        return image
+        return np.stack([image[0], image[0]], axis=0)
     
     def apply_to_mask(self, mask):
         self.mask = mask
@@ -650,5 +650,6 @@ class BinaryMaskWmap(DualTransform):
         #wmap_0_squeeze = np.squeeze(wmap_0)
         output_4d = np.stack([wmap_0[0],self.mask[1]],axis=0)
         #output_5d = np.expand_dims(output_4d, axis=0)
+        print("remote binary weight output shape",output_4d.shape)
         return output_4d # the output is (C=2,Z,Y,X)
     
