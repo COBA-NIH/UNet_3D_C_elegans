@@ -21,6 +21,10 @@ from neptune.new.types import File
 import nd2
 import numpy as np
 
+from scipy.ndimage import gaussian_filter
+from skimage import filters, measure, morphology
+from skimage.filters import threshold_otsu
+from scipy.ndimage import binary_fill_holes
 
 class Inferer:
     def __init__(
@@ -30,9 +34,9 @@ class Inferer:
         batch_size=4,
         overlap=0.75,
         patch_mode="gaussian",
-        min_size=15,
-        max_size=250,
-        threshold=0.5,
+        min_size=20,
+        max_size=500,
+        threshold=0.3,
         neptune_run=None,
     ):
         self.model = model
@@ -95,7 +99,10 @@ class Inferer:
             #segmentation = self.run_multicut(prediction)
             pred_border = prediction[0]
             pred_mask = prediction[1]
-            segmentation = self.run_multicut(pred_border) 
+            
+            binary_image_bool = self.get_binary_mask(pred_mask, pred_border)
+            
+            segmentation = self.run_multicut(pred_border,mask=binary_image_bool) 
             if self.neptune_run:
                 self.neptune_run["segmentation"].upload(File.as_image(segmentation))
 
@@ -186,14 +193,62 @@ class Inferer:
 
 
         return df
+    
+    def get_binary_mask(self, background, boundaries, sigma=2, threshold_correction=1.2, min_hole_size=80):
+        """
+        Generate a binary 3D mask from background and boundaries images,
+        filling only large 3D holes over 80 pixels.
 
-    def run_multicut(self, prediction):
+        Parameters:
+            background (ndarray): 3D background image.
+            boundaries (ndarray): 3D boundary image.
+            sigma (float): Gaussian smoothing sigma.
+            threshold_correction (float): Multiplier for Otsu threshold.
+            min_hole_size (int): Minimum size (in voxels) for a hole to be filled.
+
+        Returns:
+            ndarray: Final binary mask with large 3D holes filled.
+        """
+
+        # 1. Add background and boundaries
+        combined = background + boundaries
+        combined = np.clip(combined, 0, 1)
+
+        # 2. Smooth with 3D Gaussian filter
+        smoothed = gaussian_filter(combined, sigma=sigma)
+
+        # 3. Apply Otsu threshold with correction factor
+        thresh = threshold_otsu(smoothed)
+        corrected_thresh = thresh * threshold_correction
+        binary_mask = smoothed > corrected_thresh
+
+        # 4. Fill all 3D holes (temporarily)
+        filled_mask = binary_fill_holes(binary_mask)
+
+        # 5. Isolate only the holes
+        holes = filled_mask & ~binary_mask
+
+        # 6. Label 3D holes and filter by size
+        labeled_holes = measure.label(holes, connectivity=1)
+        large_holes = np.zeros_like(binary_mask, dtype=bool)
+
+        for region in measure.regionprops(labeled_holes):
+            if region.area >= min_hole_size:
+                large_holes[labeled_holes == region.label] = True
+
+        # 7. Add only large holes to the original mask
+        final_binary_mask = binary_mask | large_holes
+
+        return final_binary_mask
+
+    def run_multicut(self, prediction, mask):
         """Performs multicut segmentation on a border prediction"""
         ws, _ = distance_transform_watershed(
             prediction,
             threshold=self.threshold,
             sigma_seeds=2.0,
-            min_size=self.min_size
+            min_size=self.min_size,
+            mask=mask,
         )
 
         rag = compute_rag(ws)
@@ -205,7 +260,7 @@ class Inferer:
 
         edge_sizes = features[:, 1]
 
-        costs = transform_probabilities_to_costs(probs, edge_sizes=edge_sizes, beta=0.5)
+        costs = transform_probabilities_to_costs(probs, edge_sizes=edge_sizes, beta=0.3)
 
         graph = nifty.graph.undirectedGraph(rag.numberOfNodes)
 
@@ -217,3 +272,4 @@ class Inferer:
         final_seg = nifty.tools.take(node_labels, ws)
 
         return final_seg
+
