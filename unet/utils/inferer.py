@@ -194,7 +194,7 @@ class Inferer:
 
         return df
     
-    def get_binary_mask(self, background, boundaries, sigma=2, threshold_correction=1.2, min_hole_size=80):
+    def get_binary_mask(self, background, boundaries, sigma=2, threshold_correction=0.5, min_hole_size=80, max_hole_size=500):
         """
         Generate a binary 3D mask from background and boundaries images,
         filling only large 3D holes over 80 pixels.
@@ -233,7 +233,7 @@ class Inferer:
         large_holes = np.zeros_like(binary_mask, dtype=bool)
 
         for region in measure.regionprops(labeled_holes):
-            if region.area >= min_hole_size:
+            if region.area >= min_hole_size and region.area <= max_hole_size:
                 large_holes[labeled_holes == region.label] = True
 
         # 7. Add only large holes to the original mask
