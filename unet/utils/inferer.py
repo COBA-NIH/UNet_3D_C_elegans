@@ -25,6 +25,8 @@ from scipy.ndimage import gaussian_filter
 from skimage import filters, measure, morphology
 from skimage.filters import threshold_otsu
 from scipy.ndimage import binary_fill_holes
+from skimage.segmentation import relabel_sequential
+from skimage.measure import regionprops_table, regionprops
 
 class Inferer:
     def __init__(
@@ -125,6 +127,12 @@ class Inferer:
                 segmentation,
                 min_size=self.min_size,
                 max_size=self.max_size 
+                )
+            # Filter out binary mask objects
+            segmentation = utils.filter_objects_binary(
+                segmentation,
+                prob_binary=pred_mask,
+                prob_threshold=0.5,
                 )
             
             skimage.io.imsave(
@@ -240,6 +248,11 @@ class Inferer:
         final_binary_mask = binary_mask | large_holes
 
         return final_binary_mask
+    
+    def make_sequential(array):
+        unique = np.unique(array)
+        array = np.searchsorted(unique, array)
+        return array
 
     def run_multicut(self, prediction, mask):
         """Performs multicut segmentation on a border prediction"""
@@ -260,7 +273,7 @@ class Inferer:
 
         edge_sizes = features[:, 1]
 
-        costs = transform_probabilities_to_costs(probs, edge_sizes=edge_sizes, beta=0.3)
+        costs = transform_probabilities_to_costs(probs, edge_sizes=edge_sizes, beta=0.3, weighting_exponent=1.5)
 
         graph = nifty.graph.undirectedGraph(rag.numberOfNodes)
 

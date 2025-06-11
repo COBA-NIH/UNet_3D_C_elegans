@@ -8,6 +8,8 @@ import os
 import monai
 import pandas as pd
 from tqdm import tqdm
+from skimage.segmentation import relabel_sequential
+from skimage.measure import regionprops_table, regionprops
 # import mahotas
 
 def generate_patches(image, patch_shape, stride_shape, unfold_dims=[0, 1, 2]):
@@ -367,7 +369,7 @@ def create_patch_dataset(load_data_csv, patch_size, filter_patches=False, create
     output_data_csv.to_csv("training_data.csv", index=False)
 
 
-def filter_objects(labels, max_size=250, min_size=10):
+def filter_objects(labels, max_size=300, min_size=20):
     df = skimage.measure.regionprops_table(labels, properties=("label","axis_major_length"))
     df = pd.DataFrame.from_dict(df)
     min_objects = df[(df["axis_major_length"] < min_size)]["label"].values
@@ -378,3 +380,52 @@ def filter_objects(labels, max_size=250, min_size=10):
     labels = make_sequential(labels)
     return labels
 
+def filter_objects_binary(labels, prob_binary=None, prob_threshold=0.5):
+    if prob_binary is None:
+        raise ValueError("prob_binary must be provided")
+
+    df = skimage.measure.regionprops_table(
+        labels,
+        intensity_image=prob_binary,
+        properties=("label", "axis_major_length", "intensity_mean")
+    )
+    df = pd.DataFrame.from_dict(df)
+
+        # filter by intensity
+    condition = df["intensity_mean"] <= prob_threshold
+
+    remove_labels = df[condition]["label"].values
+    for rmv in remove_labels:
+        labels = np.where(labels == rmv, 0, labels)
+
+    labels = make_sequential(labels) 
+    return labels
+
+def intersection_over_union(ground_truth, prediction):
+    
+    # Count objects
+    true_objects = len(np.unique(ground_truth))
+    pred_objects = len(np.unique(prediction))
+    
+    # Compute intersection
+    h = np.histogram2d(ground_truth.flatten(), prediction.flatten(), bins=(true_objects,pred_objects))
+    intersection = h[0]
+    
+    # Area of objects
+    area_true = np.histogram(ground_truth, bins=true_objects)[0]
+    area_pred = np.histogram(prediction, bins=pred_objects)[0]
+    
+    # Calculate union
+    area_true = np.expand_dims(area_true, -1)
+    area_pred = np.expand_dims(area_pred, 0)
+    union = area_true + area_pred - intersection
+    
+    # Exclude background from the analysis
+    intersection = intersection[1:,1:]
+    union = union[1:,1:]
+    
+    # Compute Intersection over Union
+    union[union == 0] = 1e-9
+    IOU = intersection/union
+    
+    return IOU
