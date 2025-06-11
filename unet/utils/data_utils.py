@@ -401,6 +401,69 @@ def filter_objects_binary(labels, prob_binary=None, prob_threshold=0.5):
     labels = make_sequential(labels) 
     return labels
 
+def merge_small_fragments(label_image, min_smallfragment_area=50000, min_largercell_area=300000):
+    """
+    Merge small label fragments into neighboring cells with a sufficiently large major axis length.
+
+    Parameters:
+    - label_image: 3D NumPy array of labeled regions.
+    - min_smallfragment_area: minimum length of the major axis to be considered a fragment.
+    - min_largercell_area: minimum length of the major axis required for a neighbor to absorb a fragment.
+
+    Returns:
+    - A modified label image with small fragments merged into larger adjacent cells.
+    """
+    # Measure region properties for all labels
+    props = regionprops(label_image)
+
+    # Create dictionaries for volume and major axis length per label
+    label_area = {p.label: p.area for p in props}
+
+    # Identify labels that are considered small fragments
+    small_labels = [lbl for lbl, size in label_area.items() if size < min_smallfragment_area]
+    large_labels = set(lbl for lbl, length in label_area.items() if length >= min_largercell_area)
+
+    #print(f"Found {len(small_labels)} small fragments.")
+
+    # Create a copy of the label image to modify
+    new_labels = label_image.copy()
+    
+    # 3D connectivity structure (26 neighbors)
+    struct = generate_binary_structure(rank=3, connectivity=3)
+
+    for lbl in small_labels:
+        # Create a binary mask for the current small fragment
+        mask = label_image == lbl
+
+        # Dilate the mask to find adjacent neighbors
+        dilated = binary_dilation(mask)
+        neighbors = np.unique(label_image[dilated & (label_image != lbl)])
+
+        if len(neighbors) == 0:
+            continue
+
+        # Filter neighbors by major axis length threshold
+        large_neighbors = [n for n in neighbors if n in large_labels]
+
+        if len(large_neighbors) == 0:
+            continue  # No eligible neighbors found
+        
+        # Calculate contact area with each large neighbor
+        contact_areas = {}
+        for neighbor in large_neighbors:
+            neighbor_mask = label_image == neighbor
+            # Border voxels of fragment touching neighbor voxels
+            touching_voxels = binary_dilation(neighbor_mask, structure=struct) & mask
+            contact_areas[neighbor] = np.sum(touching_voxels)
+
+        # Select neighbor with maximum contact area
+        best_neighbor = max(contact_areas, key=contact_areas.get)
+
+        # Assign the fragment voxels to the selected neighboring label
+        new_labels[mask] = best_neighbor
+
+    return new_labels
+
 def intersection_over_union(ground_truth, prediction):
     
     # Count objects
@@ -429,3 +492,4 @@ def intersection_over_union(ground_truth, prediction):
     IOU = intersection/union
     
     return IOU
+
