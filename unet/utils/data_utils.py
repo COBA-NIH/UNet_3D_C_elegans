@@ -9,7 +9,9 @@ import monai
 import pandas as pd
 from tqdm import tqdm
 from skimage.segmentation import relabel_sequential
-from skimage.measure import regionprops_table, regionprops
+from skimage.measure import regionprops_table, regionprops, label
+from scipy.ndimage import find_objects
+from scipy.ndimage import binary_dilation, generate_binary_structure
 # import mahotas
 
 def generate_patches(image, patch_shape, stride_shape, unfold_dims=[0, 1, 2]):
