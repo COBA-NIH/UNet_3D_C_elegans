@@ -135,12 +135,10 @@ class Inferer:
                 prob_threshold=0.5,
                 )
             # Merging small objects to bigger ones
-            segmentation = utils.merge_small_objects(
+            segmentation = utils.merge_small_fragments(
                 segmentation,
-                prob_binary=pred_mask,
-                prob_threshold=0.5,
-                min_size=self.min_size,
-                max_size=self.max_size
+                min_smallfragment_area=50000,
+                min_largercell_area=300000,
             )
             
             skimage.io.imsave(
