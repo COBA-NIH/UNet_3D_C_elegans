@@ -28,6 +28,10 @@ from scipy.ndimage import binary_fill_holes
 from skimage.segmentation import relabel_sequential
 from skimage.measure import regionprops_table, regionprops
 
+import matplotlib.pyplot as plt
+import tempfile
+from skimage.color import label2rgb
+
 class Inferer:
     def __init__(
         self,
@@ -102,11 +106,12 @@ class Inferer:
             pred_border = prediction[0]
             pred_mask = prediction[1]
             
-            binary_image_bool = self.get_binary_mask(pred_mask, pred_border)
+            #binary_image_bool = self.get_binary_mask(pred_mask, pred_border)
             
-            segmentation = self.run_multicut(pred_border,mask=binary_image_bool) 
-            if self.neptune_run:
-                self.neptune_run["segmentation"].upload(File.as_image(segmentation))
+            segmentation = self.run_multicut(pred_border) 
+            
+            #if self.neptune_run:
+             #   self.neptune_run["segmentation"].upload(File.as_image(segmentation))
 
             save_path = pathlib.Path(input_image_path)
             prediction_fn = os.path.join(
@@ -147,11 +152,28 @@ class Inferer:
                 check_contrast=False,
                 compression=("zlib", 1),
             )
+            
+            seg_slice = segmentation[30] #slice 30
+            
+            colored = label2rgb(seg_slice, bg_label=0, bg_color=(0, 0, 0), kind='overlay')
+            
+            fig, ax = plt.subplots(facecolor='black')
+            ax.imshow(colored)
+            ax.axis("off")
+            
+            key = f"segmentations/{i}"
+
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                fig.savefig(tmpfile.name, bbox_inches='tight', pad_inches=0, facecolor='black')
+                if self.neptune_run:
+                    self.neptune_run[key].upload(File(tmpfile.name))
+                    #tmpfile_path = tmpfile.name        
 
         inference_data_csv = self.calculate_prediction_performance(inference_data_csv)
+        #self.plot_segmentation_performance_by_scale(inference_data_csv)
 
         inference_data_csv.to_csv("./output/inference_data.csv", index=False)
-       # return inference_data_csv
+        return inference_data_csv
 
     def calculate_prediction_performance(self, df):
         # Select rows that have a corresponding mask
@@ -204,11 +226,72 @@ class Inferer:
 
         if self.neptune_run is not None:
             self.neptune_run["evaluation/predictions"].upload(File.as_html(df))
-
-
+            
         return df
     
-    def get_binary_mask(self, background, boundaries, sigma=2, threshold_correction=0.5, min_hole_size=80, max_hole_size=500):
+    def plot_segmentation_performance_by_scale(self, df):
+        df_valid = df[~df["f1_threshold_0.1"].isna()].reset_index(drop=True)
+        thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+
+        metric_groups = {
+            "Metric_scores": ["f1", "precision", "recall"],
+            "Object_counts": ["true_positive", "false_positive", "false_negative"],
+            "Topology_(counts)": ["merges", "splits"],
+            "Topology_(%)": ["perc_merged", "perc_split"]
+        }
+
+        for title, metrics in metric_groups.items():
+            plt.figure(figsize=(8, 5))
+            for metric in metrics:
+                values = []
+                for th in thresholds:
+                    col = f"{metric}_threshold_{th}"
+                    if col in df_valid.columns:
+                        values.append(df_valid[col].mean())
+                    else:
+                        break
+                if len(values) == len(thresholds):
+                    plt.plot(thresholds, values, marker="o", label=metric.replace("_", " ").capitalize())
+            plt.title(f"Segmentation performance:{title}")
+            plt.xlabel("IoU threshold")
+            ylabel = "Score" if "Score" in title else "Count" if "counts" in title else "%"
+            plt.ylabel(ylabel)
+            plt.grid(True)
+            plt.legend()
+            plt.tight_layout()
+            key=f"evaluation_plots/{title}/plot"
+
+            # save figure and upload to neptune
+            if self.neptune_run is not None:
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                    plt.savefig(tmpfile.name)
+                    print(f"Plot saved in: {tmpfile.name}")
+                    self.neptune_run[key].upload(File(tmpfile.name))
+                    print("uploaded")
+                    #os.remove(tmpfile.name)
+                    plt.close()
+
+        # Rand error 
+        if "rand_error" in df_valid.columns:
+            plt.figure(figsize=(6, 3))
+            plt.axhline(df_valid["rand_error"].mean(), color="red", linestyle="--",
+                        label=f"Rand error (mean = {df_valid['rand_error'].mean():.3f})")
+            plt.title("Rand error (mean across images)")
+            plt.ylabel("Rand error")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            key=f"evaluation_plots/rand_error/plot"
+
+            if self.neptune_run is not None:
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                    plt.savefig(tmpfile.name)
+                    print(f"Plot random saved in: {tmpfile.name}")
+                    self.neptune_run[key].upload(File(tmpfile.name))
+                    #os.remove(tmpfile.name)
+                    plt.close()
+
+    def get_binary_mask(self, background, boundaries, sigma=4, threshold_correction=0.4, min_hole_size=10, max_hole_size=500):
         """
         Generate a binary 3D mask from background and boundaries images,
         filling only large 3D holes over 80 pixels.
@@ -255,19 +338,13 @@ class Inferer:
 
         return final_binary_mask
     
-    def make_sequential(array):
-        unique = np.unique(array)
-        array = np.searchsorted(unique, array)
-        return array
-
-    def run_multicut(self, prediction, mask):
+    def run_multicut(self, prediction):
         """Performs multicut segmentation on a border prediction"""
         ws, _ = distance_transform_watershed(
             prediction,
             threshold=self.threshold,
             sigma_seeds=2.0,
-            min_size=self.min_size,
-            mask=mask,
+            min_size=self.min_size
         )
 
         rag = compute_rag(ws)
