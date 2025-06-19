@@ -187,8 +187,9 @@ def labels_to_edges_and_binary(labels, mode, connectivity, blur):
     if len(regions) > 0:
         cell_edges = skimage.segmentation.find_boundaries(labels, mode=mode, connectivity=connectivity)
         #cell_edges = skimage.filters.gaussian(cell_edges, sigma=blur)
-        foreground = np.zeros_like(labels)
-        foreground[labels >= 1] = 1
+        #foreground = np.zeros_like(labels)
+        foreground = labels
+        #foreground[labels >= 1] = 1
         output = [cell_edges, foreground]
     else:
         # GT is blank

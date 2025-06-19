@@ -1,11 +1,14 @@
 import torch
 import skimage
 import numpy as np
+import pandas as pd
 import random
 import scipy
 import elasticdeform
 from collections.abc import Iterable
 from . import aug_functional as F
+from skimage.measure import regionprops
+
 
 
 class Compose:
@@ -635,21 +638,40 @@ class BinaryMaskWmap(DualTransform):
     
     def apply_to_mask(self, mask):
         self.mask = mask
-        return mask
+        foreground = np.zeros_like(mask)
+        foreground[mask >= 1] = 1
+        return foreground
 
     def apply_to_wmap(self, wmap):
         print("wmap shape", wmap.shape, "mask shape", self.mask.shape)
-        wmap_0 = (self.edge_multiplier * self.mask[0]) + (self.wmap_multiplier * wmap) 
-        # wmap[self.mask == 0] = 0
+    
+        # Aplica pesos a los bordes (canal 0)
+        wmap_0 = (self.edge_multiplier * self.mask[0]) + (self.wmap_multiplier * wmap)
         wmap_0 = np.where(self.mask[0] == 0, 0, wmap_0)
-        if self.invert_wmap and self.mask.max() != 0:
+    
+        # Crea nuevo canal 1 con pesos escalados según el tamaño de cada célula
+        scaled_mask = np.zeros_like(self.mask[1], dtype=np.float32)
+        props = regionprops(self.mask[1])
+        scaling_values = []
+        for prop in props:
+            label = prop.label
+            cell_size = prop.area
+            scaling = 1.0* (cell_size ** 0.5)
+            scaled_mask[self.mask[1] == label] = scaling
+            scaling_values.append((label, cell_size, scaling))
+            print(f"  - Cell {label}: area = {cell_size}, scaling_factor = {scaling:.3f}")
+    
+        # Si se pide invertir el weight map (canal 0), aplica
+        if self.invert_wmap and wmap_0.max() != 0:
             non_zero_mask = wmap_0 != 0
-            wmap_0[non_zero_mask] = np.max(wmap_0[non_zero_mask]) - wmap_0[non_zero_mask] + np.min(wmap_0[non_zero_mask])
-        # wmap = self.mask + wmap
-        print(wmap_0.shape,self.mask.shape)
-        #wmap_0_squeeze = np.squeeze(wmap_0)
-        output_4d = np.stack([wmap_0[0],self.mask[1]],axis=0)
-        #output_5d = np.expand_dims(output_4d, axis=0)
-        print("remote binary weight output shape",output_4d.shape)
-        return output_4d # the output is (C=2,Z,Y,X)
+            wmap_0[non_zero_mask] = (
+                np.max(wmap_0[non_zero_mask]) - wmap_0[non_zero_mask] + np.min(wmap_0[non_zero_mask])
+            )
+        print("wmap_0 shape", wmap_0.shape, "scaled_mask shape", scaled_mask.shape)
+        # Empaqueta salida con canal 0 (bordes + wmap original) y canal 1 (máscara escalada)
+        output_4d = np.stack([wmap_0[0], scaled_mask], axis=0)  # (C=2, Z, Y, X)
+        print("remote binary weight output shape", output_4d.shape)
+        df = pd.DataFrame(scaling_values, columns=["Label", "CellSize", "Scaling"])
+        df.to_csv("cell_scaling_debug.csv", index=False)
+        return output_4d
     
