@@ -19,7 +19,7 @@ import neptune.new as neptune
 
 #_tmp_log_file_name = "tmp_log_file.txt"
 
-_CUSTOM_RUN_ID = "gt3_190from195"
+_CUSTOM_RUN_ID = "gt8_froms190"
 
 neptune_run = neptune.init_run(
     tags=["testing_neptune_on"],
@@ -29,6 +29,13 @@ neptune_run = neptune.init_run(
     source_files=["**/*.py"]
 )
 
+neptune_run["sys/description"] = """
+2 batches  included in the training.
+We are using modified weight maps that increase weights of label mask proportionally to cell size (augmentations.py and aug_functional.py) 
+The training is done from model 190. 
+here change exponent for cell size of 0.5.
+patches changed to 24x200x200.
+"""
 
 parser  = argparse.ArgumentParser(description="3DUnet Training")
 
@@ -59,7 +66,7 @@ params = {
     "batch_size": args.batch,
     "epochs": args.epochs,
     "val_split": 0.2,
-    "patch_size": (24, 150, 150),
+    "patch_size": (24, 200, 200),
     "create_wmap": True, ##
     "lr": 1e-2,
     "weight_decay": 1e-5,
@@ -182,7 +189,7 @@ def main_worker(args):
 
     model = utils.load_weights(
         model, 
-        weights_path="../maddox_195.pytorch",
+        weights_path="../maddox_190.pytorch",
         device="cpu", # Load to CPU and convert to GPU later
         dict_key="state_dict"
     )

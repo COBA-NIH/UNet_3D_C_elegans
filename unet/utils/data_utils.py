@@ -12,6 +12,8 @@ from skimage.segmentation import relabel_sequential
 from skimage.measure import regionprops_table, regionprops, label
 from scipy.ndimage import find_objects
 from scipy.ndimage import binary_dilation, generate_binary_structure
+from scipy.ndimage import distance_transform_edt
+
 # import mahotas
 
 def generate_patches(image, patch_shape, stride_shape, unfold_dims=[0, 1, 2]):
@@ -175,10 +177,6 @@ def calculate_weight_map(gt_array, centroid_class_index=2, edge_class_index=1, l
         # We multiply by the centroid == background array so that we filter out any distances 
         # that may bleed into the centroid - we want the distance information to only be 
         # in the edge and background classes (I think). 
-#        for obj in objects:
- #            size = np.sum(labels == obj)  # Calculate the size of the cell
-  #            scaling_factor = calculate_scaling_factor(size)  # Function to determine scaling based on size
-   #         w[edge_class_index] += scaling_factor * w0 * np.exp(-1 * ((d1 + d2) ** 2) / (2 * sigma ** 2)) * (gt_array[edge_class_index] > 0.5).astype(np.uint8)
         w[edge_class_index] = w0 * np.exp(-1 * ((d1 + d2) ** 2) / (2 * sigma ** 2)) * (gt_array[edge_class_index] > 0.5).astype(np.uint8)
         #  * (gt_array[centroid_class_index] == background_class).astype(np.uint8)
     # Array to hold class weights
@@ -240,6 +238,7 @@ def calculate_binary_weight_map(labels, w0=10, sigma=5):
         and see another point that was a similar height to your first ascent (1st). (ie. you're 
         incrementally looking for local minima).
         """
+        
         distances = np.sort(distances, axis = 0)
         d1, d2 = distances[0,...], distances[1,...]
 
@@ -249,7 +248,6 @@ def calculate_binary_weight_map(labels, w0=10, sigma=5):
         w = np.zeros_like(labels)
     
     return w
-
 
 def load_weights(model, weights_path, device, dict_key="state_dict"):
     weights = torch.load(weights_path, map_location=device)[dict_key]

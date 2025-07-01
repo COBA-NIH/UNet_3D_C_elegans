@@ -12,18 +12,18 @@ from PIL import Image
 import os
 import unet.utils.metrics as metrics
 
-
-
 neptune_run = neptune.init_run(
     tags=["testing_neptune_on"],
     project="BroadImagingPlatform/maddox",
     api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1MDliZmIxMS02NjNhLTQ0OTMtYjYwMS1lOWM3N2ZmMjdlYzAifQ==",
-    custom_run_id="gt5_inference209_v8_alltest" # Usamos el mismo run_id que en el código A
+    custom_run_id="gt8_froms239_newbatchinference" 
 )
 
 neptune_run["source_code/files"].upload_files([
     "unet/utils/inferer.py",
-    "unet/utils/data_utils.py"
+    "unet/utils/data_utils.py",
+    "unet/augmentations/augmentations.py",
+    "unet/augmentations/aug_functional.py"
 ])
 
 # get run ID from Neptune
@@ -48,14 +48,14 @@ model = UNet3D(
 try:
     model = utils.load_weights(
         model, 
-        weights_path="best_checkpoint_209.pytorch", 
+        weights_path="maddox_239.pytorch", 
         device="cpu", # Load to CPU and convert to GPU later
         dict_key="state_dict"
     )
 except:
     model = utils.load_weights(
         model, 
-        weights_path="../best_checkpoint_209.pytorch", 
+        weights_path="../maddox_239.pytorch", 
         device="cpu", # Load to CPU and convert to GPU later
         dict_key="state_dict"
     )
@@ -64,7 +64,7 @@ model.to("cuda")
 
 infer = Inferer(
     model=model, 
-    patch_size=[24, 150, 150],
+    patch_size=[24, 200, 200],
     neptune_run=neptune_run
     )
 

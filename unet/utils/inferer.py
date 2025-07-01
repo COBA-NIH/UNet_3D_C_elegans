@@ -127,6 +127,31 @@ class Inferer:
             skimage.io.imsave(
                 prediction_fn, prediction.astype(np.float16), check_contrast=False, compression=("zlib", 1)
             )
+            # Save prediction binary mask
+            pred_slice_mask = pred_mask[15] #slice 30
+            fig0, ax = plt.subplots()
+            ax.imshow(pred_slice_mask, cmap='gray')
+            ax.axis("off")
+            
+            key0 = f"predictions_binary_mask/{i}"
+
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile0:
+                fig0.savefig(tmpfile0.name, bbox_inches='tight', pad_inches=0)
+                if self.neptune_run:
+                    self.neptune_run[key0].upload(File(tmpfile0.name))            
+            # Save prediction boundaries
+            pred_slice_boundarie = pred_border[15] #slice 30
+            fig1, ax = plt.subplots()
+            ax.imshow(pred_slice_boundarie, cmap='gray')
+            ax.axis("off")
+            
+            key1 = f"predictions_boundaries/{i}"
+
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile1:
+                fig1.savefig(tmpfile1.name, bbox_inches='tight', pad_inches=0)
+                if self.neptune_run:
+                    self.neptune_run[key1].upload(File(tmpfile1.name))       
+            
             # Filter out large and small objects
             segmentation = utils.filter_objects(
                 segmentation,
@@ -152,8 +177,8 @@ class Inferer:
                 check_contrast=False,
                 compression=("zlib", 1),
             )
-            
-            seg_slice = segmentation[30] #slice 30
+            # Save segmentation slice
+            seg_slice = segmentation[15] #slice 30
             
             colored = label2rgb(seg_slice, bg_label=0, bg_color=(0, 0, 0), kind='overlay')
             
