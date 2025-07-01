@@ -7,7 +7,7 @@ import pandas as pd
 
 inputs = [
     gradio.Files(file_count="multiple", label="Drag and drop all images to be analyzed. Expected (z, x, y) dimension order 3D tiff files"),
-    gradio.Textbox(value="24, 100, 100", interactive=True, label="Patch size (z, x, y)"),
+    gradio.Textbox(value="24, 200, 200", interactive=True, label="Patch size (z, x, y)"),
     gradio.Number(value=0.75, interactive=True, label="Patch overlap"),
     gradio.Radio(["gaussian","constant"], type="value", value="gaussian", label="Patch overlap mode"),
     gradio.Number(value=1, interactive=True, label="Batch size for inference"),
@@ -36,13 +36,13 @@ def run_inference(image_path_list, patch_size, patch_overlap, patch_mode, batch_
 
     # Instantiate model
     model = UNet3D(
-        in_channels=2, out_channels=1, f_maps=32
+        in_channels=2, out_channels=2, f_maps=32
     )
 
     # Load weights
     model = utils.load_weights(
         model, 
-        weights_path="/workspace/best_checkpoint.pytorch", 
+        weights_path="/workspace/maddox_239.pytorch", 
         device="cpu", # Load to CPU and convert to GPU later
         dict_key="state_dict"
     )

@@ -1,5 +1,5 @@
-# docker build -t ctromanscoia/unet3d_c_elegans:0.1 .
-# docker run -it --rm -p 127.0.0.1:8000:8000 ctromanscoia/unet3d_c_elegans:0.1
+# docker build -t pllanosf/unet3d_c_elegans_app:0.1 .
+# docker run -it --rm -p 127.0.0.1:8000:8000 pllanosf/unet3d_c_elegans_app:0.1
 
 FROM pytorch/pytorch:1.13.0-cuda11.6-cudnn8-runtime
 
@@ -13,7 +13,7 @@ ENV HOME=/workspace
 
 ## Add files to the container
 # Add weights
-ADD weights/best_checkpoint_exp_044.pytorch /workspace/best_checkpoint.pytorch
+ADD weights/maddox_239.pytorch /workspace/maddox_239.pytorch
 # Add the UNet files
 ADD unet/ /workspace/unet
 # Add gradio app
