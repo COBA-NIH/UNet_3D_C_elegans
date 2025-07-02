@@ -43,6 +43,9 @@ class Inferer:
         min_size=20,
         max_size=500,
         threshold=0.3,
+        prob_threshold=0.5,
+        beta=0.3,
+        sigma=2.0,
         neptune_run=None,
     ):
         self.model = model
@@ -54,6 +57,9 @@ class Inferer:
         self.max_size = max_size
         self.threshold = threshold
         self.neptune_run = neptune_run
+        self.prob_threshold = prob_threshold
+        self.beta = beta
+        self.sigma = sigma
 
         if torch.cuda.is_available():
             # Find fastest conv
@@ -162,7 +168,7 @@ class Inferer:
             segmentation = utils.filter_objects_binary(
                 segmentation,
                 prob_binary=pred_mask,
-                prob_threshold=0.5,
+                prob_threshold=self.prob_threshold,
                 )
             # Merging small objects to bigger ones
             segmentation = utils.merge_small_fragments(
@@ -368,7 +374,7 @@ class Inferer:
         ws, _ = distance_transform_watershed(
             prediction,
             threshold=self.threshold,
-            sigma_seeds=2.0,
+            sigma_seeds=self.sigma,
             min_size=self.min_size
         )
 
@@ -381,7 +387,7 @@ class Inferer:
 
         edge_sizes = features[:, 1]
 
-        costs = transform_probabilities_to_costs(probs, edge_sizes=edge_sizes, beta=0.3, weighting_exponent=1.5)
+        costs = transform_probabilities_to_costs(probs, edge_sizes=edge_sizes, beta=self.beta, weighting_exponent=1.5)
 
         graph = nifty.graph.undirectedGraph(rag.numberOfNodes)
 

@@ -7,20 +7,23 @@ import pandas as pd
 
 inputs = [
     gradio.Files(file_count="multiple", label="Drag and drop all images to be analyzed. Expected (z, x, y) dimension order 3D tiff files"),
-    gradio.Textbox(value="24, 200, 200", interactive=True, label="Patch size (z, x, y)"),
+    gradio.Textbox(value="24, 100, 100", interactive=True, label="Patch size (z, x, y)"),
     gradio.Number(value=0.75, interactive=True, label="Patch overlap"),
     gradio.Radio(["gaussian","constant"], type="value", value="gaussian", label="Patch overlap mode"),
     gradio.Number(value=1, interactive=True, label="Batch size for inference"),
-    gradio.Number(value=15, interactive=True, label="Object minimum size"),
-    gradio.Number(value=250, interactive=True, label="Object maximum size"),
-    gradio.Number(value=0.5, interactive=True, label="Threshold"),
+    gradio.Number(value=20, interactive=True, label="Object minimum size"),
+    gradio.Number(value=500, interactive=True, label="Object maximum size"),
+    gradio.Number(value=0.3, interactive=True, label="Threshold boundaries"),
+    gradio.Number(value=0.5, interactive=True, label="Threshold for binary mask"),
+    gradio.Number(value=0.3, interactive=True, label="beta value"),
+    gradio.Number(value=2.0, interactive=True, label="sigma value"),
 ]
 
 outputs = [
     gradio.File(label="Download output")
 ]
 
-def run_inference(image_path_list, patch_size, patch_overlap, patch_mode, batch_size, min_size, max_size, threshold):
+def run_inference(image_path_list, patch_size, patch_overlap, patch_mode, batch_size, min_size, max_size, threshold, prob_threshold, beta, sigma):
 
     # Convert the patch string into a tuple (not ideal...)
     patch_size = tuple([int(i) for i in patch_size.split(', ')])
@@ -67,7 +70,10 @@ def run_inference(image_path_list, patch_size, patch_overlap, patch_mode, batch_
         patch_mode=patch_mode,
         min_size=min_size,
         max_size=max_size,
-        threshold=threshold
+        threshold=threshold,
+        prob_threshold=prob_threshold,
+        beta=beta,
+        sigma=sigma,
         )
     
     if all(inference_data_csv["images"].str.endswith(".nd2")):
