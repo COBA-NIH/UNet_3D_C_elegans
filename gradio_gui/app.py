@@ -7,7 +7,7 @@ import pandas as pd
 
 inputs = [
     gradio.Files(file_count="multiple", label="Drag and drop all images to be analyzed. Expected (z, x, y) dimension order 3D tiff files"),
-    gradio.Textbox(value="24, 100, 100", interactive=True, label="Patch size (z, x, y)"),
+    gradio.Textbox(value="24, 200, 200", interactive=True, label="Patch size (z, x, y)"),
     gradio.Number(value=0.75, interactive=True, label="Patch overlap"),
     gradio.Radio(["gaussian","constant"], type="value", value="gaussian", label="Patch overlap mode"),
     gradio.Number(value=1, interactive=True, label="Batch size for inference"),
@@ -102,4 +102,4 @@ app = gradio.Interface(
     )
 
 if __name__ == "__main__":
-    app.launch(server_name="0.0.0.0", server_port=8000)  
+    app.launch(server_name="0.0.0.0", server_port=8000)

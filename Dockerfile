@@ -1,5 +1,5 @@
-# docker build -t pllanosf/unet3d_c_elegans_app:0.1 .
-# docker run -it --rm -p 127.0.0.1:8000:8000 pllanosf/unet3d_c_elegans_app:0.1
+# docker build -t pllanosf/unet3d_c_elegans_app:0.2 .
+# docker run -it --rm -p 127.0.0.1:8000:8000 pllanosf/unet3d_c_elegans_app:0.2
 
 FROM ctromanscoia/unet3d_c_elegans:0.4
 
